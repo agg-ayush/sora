@@ -1,0 +1,18 @@
+# Hermes config template — copy to ~/.hermes/config.yaml and adjust.
+# Secrets (API keys, tokens) go in ~/.hermes/.env, NOT here.
+
+model:
+  # TrueFoundry-routed provider. Model groups map to billing pools — never
+  # swap the group without explicit instruction (teams = flat-rate, claude-group = per-token).
+  default: fireworks-group/glm-5p2
+  provider: truefoundry
+  reasoning_effort: high
+  max_tokens: 128000
+
+display:
+  # TUI is the default; tier sessions MUST use --cli to override this
+  # (the TUI's stdin closes in detached tmux panes).
+  interface: tui
+
+# Gateway: Telegram configured (add/remove platforms as needed).
+# Run `hermes gateway setup` to configure platforms interactively.
