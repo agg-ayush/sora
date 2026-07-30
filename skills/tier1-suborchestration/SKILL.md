@@ -52,6 +52,10 @@ reliably adopt a tier role on its own). Launch one of:
 - `hermes -s tier1-suborchestration -p <repo-profile>` (a per-repo profile), or
 - from a repo dir whose `.hermes.md` says "You are Tier-1 for this repo; load and
   follow tier1-suborchestration."
+T1 runs in the user's interactive terminal — the TUI is fine here (it has a real
+stdin). Only sessions spawned in **detached tmux** (T2 and its sub-sessions) need
+`--cli` (the TUI's stdin closes in detached panes). The T2 handoff (Phase 2)
+already includes `--cli` in the spawn command.
 **Lifecycle: ONE long-lived T1 per repo/component** (= one Hermes Project). It
 stays alive across many incoming tasks; each task it triages spawns its own
 per-issue Tier-2 session (see Phase 2). If you are reading this skill but were not

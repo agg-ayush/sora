@@ -254,8 +254,8 @@ Repeat until all units done or a stop condition fires:
    (all complete), go to Phase 3. (No ledger yet → derive units from the design
    doc, write the initial ledger, attach it, start at unit 1.)
 2. `claude_orchestrate start`: `task_id`, `workdir`, `worktree=<name>`,
-   `executor=claude`, `prompt` = "Read <brief-file> and the design doc, implement
-   this unit." (points at files, not pasted text).
+   `executor=claude`, `effort=medium`, `prompt` = "Read <brief-file> and the
+   design doc, implement this unit." (points at files, not pasted text).
    - `task_id` for the plugin is the tmux session name (e.g. `t2-<TASK_ID>-u3`).
      Keep it lowercase. The kanban task_id is separate and used for claim/comment/
      heartbeat/complete calls.
