@@ -9,7 +9,7 @@ and config templates for the multi-tier autonomous coding pipeline.
 plugin/     claude-orchestrate plugin (pure tmux session manager)
 skills/     tier1-suborchestration + tier2-orchestration skills
 scripts/    kanban-review.py (status transitions) + orphan-reaper.py (watchdog)
-docs/       hermes-tiers-reference.md (canonical architecture) + fleet/redesign docs
+docs/       hermes-tiers-reference.md (canonical architecture) + audit reports
 config/     config.yaml.template, env.template, zshrc-snippet.sh (NO secrets)
 ```
 
@@ -53,7 +53,7 @@ hermes gateway start
 
 # 8. Cron — orphan reaper (every 30 min)
 # Create via the cronjob tool or:
-hermes cron add --schedule "30m" --script ~/.hermes/scripts/orphan-reaper.py --no-agent
+hermes cron add "30m" --script ~/.hermes/scripts/orphan-reaper.py --no-agent
 ```
 
 ## Usage

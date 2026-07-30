@@ -90,7 +90,7 @@ def _start(args: dict) -> dict:
         return {"ok": False, "error": "task_id, prompt, and workdir are required"}
     if executor not in {"claude", "codex"}:
         return {"ok": False, "error": f"invalid executor: {executor!r} (must be 'claude' or 'codex')"}
-    if effort and effort not in {"low", "medium", "high", "max", "auto"}:
+    if effort and effort not in {"low", "medium", "high", "xhigh", "max"}:
         return {"ok": False, "error": f"invalid effort: {effort!r}"}
     if _session_exists(task_id):
         return {"ok": False, "error": f"tmux session '{task_id}' already exists"}

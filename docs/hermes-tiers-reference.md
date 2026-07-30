@@ -223,4 +223,31 @@ framework (LangGraph, CrewAI, AutoGen, OpenAI Agents SDK) owns the LLM/execution
 loop, which inverts our architecture. ultraswarm (closest prior art) makes opposite
 choices on all axes; we borrowed its mechanics (completion gate, structured-feedback-
 on-reject, squash→gate→ff-only merge), not its engine. Rejected: Claude Squad
-(TUI-only), OpenHands (too volatile), claude-code-acp (solo, stateless `-p`).
+(TUI-only, designed for solo dev — reconfirmed 2026-07-30), OpenHands (too volatile),
+claude-code-acp (solo, stateless `-p`).
+
+Additional prior art evaluated (2026-07-30 audit):
+
+- **`hermes kanban swarm`** (native): a worker→verifier→synthesizer graph primitive
+  in the installed Hermes build. Rejected for T2's parallel-units case: `swarm`'s
+  workers are Hermes-profile-based (not tmux/`claude_orchestrate`), so they can't run
+  interactive coding sessions, don't support cross-engine review (Codex/Sol), and
+  don't use the kanban claim/heartbeat/ledger lifecycle T2 depends on. T2's hand-rolled
+  `kanban link` + `claude_orchestrate` dispatch stays. Worth re-evaluating if `swarm`
+  gains a tmux-executor mode.
+- **Claude Code Agent Teams** (Anthropic, Opus 4.6+): a lead agent spawns 2-16
+  teammates sharing a codebase with peer-to-peer mailboxes, each with 1M context —
+  no tmux, no plugin. Architecturally close to T2's Phase 2 loop. Rejected: no
+  cross-engine review (Anthropic-only), no kanban durability/audit trail, no
+  interactive steering/`steer`/`interrupt`, no human merge gate. The tier system's
+  cross-engine + kanban + human-gate requirements are load-bearing and Agent Teams
+  doesn't provide them.
+- **amux** (mixpeek): open-source, tmux-native, self-healing, phone/web dashboard.
+  Its self-healing (auto-restart on crash) is a gap the `orphan-reaper` fills more
+  crudely (kill only, no resurrect); its phone dashboard is a lighter T0 Telegram
+  alternative. Not adopted (our plugin is purpose-built + integrated with kanban),
+  but the self-healing pattern is worth borrowing if the reaper evolves beyond kill.
+- **Effort-enum drift note:** the plugin's `effort` validator must match `claude --help`'s
+  accepted values. A 2026-07-30 audit caught `auto` (invalid, claude rejects it) and a
+  missing `xhigh`. Fixed to `{low, medium, high, xhigh, max}`. On every `claude` CLI
+  version bump, diff `claude --help | grep -A1 effort` against the plugin's enum.

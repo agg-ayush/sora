@@ -9,6 +9,13 @@ model:
   reasoning_effort: high
   max_tokens: 128000
 
+# Provider config — hermes's own model calls authenticate via TRUEFOUNDRY_API_KEY.
+# (The claude/codex CLI subprocesses use TFY_API_KEY separately, exported by the plugin.)
+providers:
+  truefoundry:
+    api: https://<llm-gateway>.truefoundry.cloud/api/llm/api/inference/openai/v1
+    api_key: ${TRUEFOUNDRY_API_KEY}
+
 display:
   # TUI is the default; tier sessions MUST use --cli to override this
   # (the TUI's stdin closes in detached tmux panes).

@@ -84,6 +84,7 @@ def main() -> int:
     con = sqlite3.connect(str(db))
     try:
         con.execute("PRAGMA journal_mode=WAL")
+        con.execute("PRAGMA busy_timeout=5000")  # block briefly if the gateway dispatcher is mid-write
         row = con.execute("SELECT status FROM tasks WHERE id=?", (args.task_id,)).fetchone()
         if row is None:
             print(f"task {args.task_id} not found on board {args.board or 'default'}", file=sys.stderr)

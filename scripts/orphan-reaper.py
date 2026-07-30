@@ -51,18 +51,17 @@ def pane(name):
 
 
 def is_active(p):
+    """True if the session is actively working OR waiting for input (alive, not idle)."""
     low = p.lower()
-    return any(m in low for m in ACTIVE_MARKERS)
-
-
-def meta_for(name):
-    f = TASKS / name / "meta.json"
-    if f.exists():
-        try:
-            return json.loads(f.read_text())
-        except Exception:
-            return {}
-    return {}
+    if any(m in low for m in ACTIVE_MARKERS):
+        return True  # actively working (spinner + "esc to interrupt")
+    # A session at a prompt waiting for a steer (needs_input) is NOT idle —
+    # killing it would lose the in-flight T2 conversation. Detect the Hermes/Claude
+    # input prompt marker. This mirrors the plugin's _session_state() logic.
+    lines = [l for l in p.splitlines() if l.strip()]
+    if lines and "❯" in lines[-1]:
+        return True  # at a prompt, waiting for steer — alive
+    return False
 
 
 def main():
