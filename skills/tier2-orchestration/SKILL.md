@@ -64,7 +64,7 @@ Hermes is running.
    reads the real diff; YOU run the test suite yourself. An agent writing
    `outcome=DONE` or "tests pass" is a claim, not evidence.
 4. **Boundary rule.** Coding sessions + code review → `claude_orchestrate` (review
-   is a Claude Code `/pr-review-toolkit:review-pr` session; glm-5p2 fallback when
+   is a Claude Code `/pr-review-toolkit:review-pr` session; kimi-k3 fallback when
    claude auth is down). Test-fix → a `delegate_task` sub-agent
    on a light routed model. State + control flow → kanban CLI + on-disk state. Do
    not blur these.
@@ -327,7 +327,7 @@ verdict. If `impl:fail` (no `complete` / empty diff) → back to Phase 2.
      after pushing, `gh pr checks <pr>` must show all checks passing; a red CI
      check is a gate failure even if your local run was green.
 2. On failure, capture `BEFORE_SHA = git rev-parse HEAD` in the worktree, then
-   `delegate_task` a LIGHT-model test-fixer (glm-5p2 via TrueFoundry). Its goal:
+   `delegate_task` a test-fixer (kimi-k3). Its goal:
    run the suite and fix ONLY small mechanical failures (missing dependency,
    trivial config/env). Constraint in its context, verbatim: "Do NOT modify
    implementation source. You may edit ONLY dependency/config/env files
@@ -374,10 +374,10 @@ session** (not the implementer session):
    to the Hermes-native **`requesting-code-review`** skill — run its specialist
    reviewer batch (silent-failure-hunter, code-reviewer, comment-analyzer,
    type-design-analyzer, pr-test-analyzer) via `delegate_task` on the diff
-   (`base_sha..HEAD`). These run on the global delegation model (glm-5p2) — that's
+   (`base_sha..HEAD`). These run on the global delegation model (kimi-k3) — that's
    fine, it's the fallback path. Fold their findings into the same structured
    verdict; treat CRITICAL/HIGH the same as primary-review failures. Note in the
-   gate comment that review ran via the glm-5p2 fallback, not pr-review-toolkit.
+   gate comment that review ran via the kimi-k3 fallback, not pr-review-toolkit.
 
 **3.4 adversarial QA** (optional, HIGH-RISK changes only — NOT YET BUILT, skip
 unless the change touches auth/security/migration paths or is a large diff).
