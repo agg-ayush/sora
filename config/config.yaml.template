@@ -2,10 +2,9 @@
 # Secrets (API keys, tokens) go in ~/.hermes/.env, NOT here.
 
 model:
-  # TrueFoundry-routed provider. Model groups map to billing pools — never
-  # swap the group without explicit instruction (teams = flat-rate, claude-group = per-token).
-  default: fireworks-group/glm-5p2
-  provider: truefoundry
+  # Kimi K3 via Fireworks — multimodal, strong at coding/orchestration.
+  default: accounts/fireworks/models/kimi-k3
+  provider: fireworks
   reasoning_effort: high
   max_tokens: 128000
 
