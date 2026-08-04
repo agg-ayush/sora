@@ -92,11 +92,13 @@ Hermes is running.
    async — a `delegate_task` result, a human PR approval — poll the specific
    signal directly, don't sleep-spin.)
 9. **Design = judgment → use CLI coding-agent sessions, not inline reasoning.**
-   Orchestrate a Claude Code author session (Opus, `effort=high`) and a
-   Codex/Sol review session (cross-engine) via `claude_orchestrate`. Read the
-   VERDICT file, never the design-doc body, into your own context. Author and
-   reviewer MUST be different model families — never let the author review its own
-   doc.
+   Orchestrate a Claude Code author session (`model_provider=fireworks`, i.e.
+   Kimi K3, `effort=high`) and a Codex/Sol review session (cross-engine) via
+   `claude_orchestrate`. Read the VERDICT file, never the design-doc body, into
+   your own context. Author and reviewer MUST be different model families —
+   never let the author review its own doc. (The `claude` CLI here is routed to
+   Kimi K3 via Fireworks' Anthropic-compatible endpoint, not an Anthropic model —
+   the cross-engine split is Fireworks/K3 author vs OpenAI/Sol reviewer.)
 10. **Design-review rounds capped at 3.** After the 3rd review, if still not
     approved → STOP and ESCALATE with the latest doc + outstanding blocking issues.
     Do NOT start a 4th round. A blocking issue that reflects genuine ambiguity in
@@ -155,7 +157,7 @@ T2 OWNS this loop. Design touches no repo — author and review sessions run in 
 SCRATCH DIR (NOT the target repo, NO worktree). The author session reads the
 target repo to ground the design; it does not write to it.
 
-**1b.1 Design authoring** (Claude Code Opus, high effort):
+**1b.1 Design authoring** (Kimi K3 via Fireworks, high effort):
 1. Probe claude auth: `claude -p "reply PONG"` (~30s cap). Timeout/nonzero →
    claude down; fall back to `executor=codex` for the author step (note the
    weakened cross-engine split in a kanban comment). Escalate only if BOTH
@@ -163,8 +165,9 @@ target repo to ground the design; it does not write to it.
 2. Write the raw task to a file (`<task-file>`, out-of-repo). Choose an
    `<out-path>` for the design doc OUTSIDE any repo (task artifact dir or tmp).
 3. `claude_orchestrate start` in a SCRATCH DIR (not the target repo, no
-   `worktree`), `executor=claude`, `model=claude-group/claude-opus-4-8`,
-   `effort=high` (Opus — the design author). `task_id` e.g. `t2-<TASK_ID>-design`.
+   `worktree`), `executor=claude`, `model_provider=fireworks` (Kimi K3 via
+   Fireworks — the design author), `effort=high`. Do NOT pass `model` (K3 is set
+   via env, not `--model`). `task_id` e.g. `t2-<TASK_ID>-design`.
    Prompt (verbatim shape): "Read `<task-file>` (and read the target repo at
    `<repo-path>` as needed) and write a design doc to `<out-path>`: problem
    statement; chosen approach (pick ONE, justify vs alternatives);
@@ -201,7 +204,8 @@ target repo to ground the design; it does not write to it.
    exceed the 900s TTL). Branch:
    - `approved: yes` → design accepted. Proceed to 1b.3 (attach + implement).
    - `approved: no` → write the blocking issues to a file (`<issues-file>`,
-     out-of-repo). Start a NEW Claude Code author session (Opus, `effort=high`)
+     out-of-repo). Start a NEW Claude Code author session
+     (`model_provider=fireworks`, `effort=high`)
      in a scratch dir, pointed at the current doc + `<issues-file>` to REVISE:
      "Read the design doc at `<doc-path>` and the blocking issues at
      `<issues-file>`. Revise the doc in place to address every blocking issue.
@@ -254,7 +258,8 @@ Repeat until all units done or a stop condition fires:
    (all complete), go to Phase 3. (No ledger yet → derive units from the design
    doc, write the initial ledger, attach it, start at unit 1.)
 2. `claude_orchestrate start`: `task_id`, `workdir`, `worktree=<name>`,
-   `executor=claude`, `effort=medium`, `prompt` = "Read <brief-file> and the
+   `executor=claude`, `model_provider=fireworks` (Kimi K3), `effort=medium`,
+   `prompt` = "Read <brief-file> and the
    design doc, implement this unit." (points at files, not pasted text).
    - `task_id` for the plugin is the tmux session name (e.g. `t2-<TASK_ID>-u3`).
      Keep it lowercase. The kanban task_id is separate and used for claim/comment/
@@ -348,7 +353,8 @@ verdict. If `impl:fail` (no `complete` / empty diff) → back to Phase 2.
 **3.3 code review** (this skill fills the gate `review` slot) — primary path via
 the `pr-review-toolkit` `/pr-review-toolkit:review-pr` command in a **Claude Code
 session** (not the implementer session):
-1. `claude_orchestrate start` a Claude Code session (`executor=claude`) in the
+1. `claude_orchestrate start` a Claude Code session (`executor=claude`,
+   `model_provider=fireworks` — Kimi K3) in the
    task's worktree (`workdir=<rundir>`). Prompt it to run the pr-review-toolkit
    review over this unit's changes and write a structured verdict to an
    out-of-repo file, e.g.: "Run `/pr-review-toolkit:review-pr` on the changes in
@@ -356,8 +362,8 @@ session** (not the implementer session):
    verdict to <verdict-path> as: `spec: pass|fail`, `quality: approved|needs_fixes`,
    `confidence: <0-100>`, `findings: [...]`. Set status complete + write DONE to
    your outcome file." Launch with `effort=medium` (high effort is the main claude
-   hang trigger; a structured-verdict review doesn't need it). Pass a `model` if
-   you want a specific reviewer model.
+   hang trigger; a structured-verdict review doesn't need it). Do NOT pass `model`
+   in the fireworks path (K3 is set via env).
 2. `wait` for the session; read the verdict file. (This is a distinct review
    session from the implementer session — never reuse the implementer to review
    its own work.)

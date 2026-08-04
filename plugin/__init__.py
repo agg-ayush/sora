@@ -85,11 +85,14 @@ def _start(args: dict) -> dict:
     executor = str(args.get("executor") or "claude").strip().lower()
     model = str(args.get("model") or "").strip() or None
     effort = str(args.get("effort") or "").strip().lower() or None
+    model_provider = str(args.get("model_provider") or "truefoundry").strip().lower()
 
     if not task_id or not prompt or not workdir:
         return {"ok": False, "error": "task_id, prompt, and workdir are required"}
     if executor not in {"claude", "codex"}:
         return {"ok": False, "error": f"invalid executor: {executor!r} (must be 'claude' or 'codex')"}
+    if model_provider not in {"truefoundry", "fireworks"}:
+        return {"ok": False, "error": f"invalid model_provider: {model_provider!r} (must be 'truefoundry' or 'fireworks')"}
     if effort and effort not in {"low", "medium", "high", "xhigh", "max"}:
         return {"ok": False, "error": f"invalid effort: {effort!r}"}
     if _session_exists(task_id):
@@ -153,16 +156,67 @@ def _start(args: dict) -> dict:
         exec_cmd = "claude"
         if dangerous:
             exec_cmd += " --dangerously-skip-permissions"
-        if model:
+        if model and model_provider != "fireworks":
+            # In the fireworks path the model is set via ANTHROPIC_MODEL env vars;
+            # passing --model truncates the accounts/... path in interactive mode (403).
             exec_cmd += f" --model {shlex.quote(model)}"
         if effort:
             exec_cmd += f" --effort {shlex.quote(effort)}"
-        shell_cmd = (
-            f"cd {shlex.quote(Path(rundir).as_posix())} && "
-            # ambient ANTHROPIC_API_KEY breaks the TrueFoundry gateway claude uses
-            "unset ANTHROPIC_API_KEY ANTHROPIC_API_KEY_BACKUP BACKUP_ANTHROPIC_API_KEY && "
-            f"{exec_cmd} {shlex.quote(full_prompt)}"
-        )
+        if model_provider == "fireworks":
+            # Route this session to Kimi K3 on Fireworks' Anthropic-compatible
+            # endpoint. CLAUDE_CONFIG_DIR isolates the session from the personal
+            # OAuth login + TF-gateway settings.json (which otherwise override
+            # env-var routing). ANTHROPIC_API_KEY must be explicitly empty so the
+            # Bearer-token path (ANTHROPIC_AUTH_TOKEN) wins.
+            fireworks_key = os.environ.get("FIREWORKS_API_KEY") or ""
+            if not fireworks_key:
+                return {"ok": False, "error": "model_provider=fireworks requires FIREWORKS_API_KEY in env"}
+            k3_config = get_hermes_home() / "claude-k3-config"
+            k3_config.mkdir(parents=True, exist_ok=True)
+            # Pre-seed onboarding + trust so the isolated session doesn't stall on
+            # first-run dialogs (workspace trust / bypass-permissions are handled by
+            # --dangerously-skip-permissions; onboarding gate is config-state only).
+            k3_state = k3_config / ".claude.json"
+            try:
+                existing = json.loads(k3_state.read_text(encoding="utf-8")) if k3_state.exists() else {}
+            except ValueError:
+                existing = {}
+            changed = False
+            if not existing.get("hasCompletedOnboarding"):
+                existing["hasCompletedOnboarding"] = True
+                changed = True
+            approved = existing.setdefault("customApiKeyResponses", {}).setdefault("approved", [])
+            if fireworks_key not in approved:
+                approved.append(fireworks_key)
+                changed = True
+            if changed:
+                k3_state.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+            k3_model = "accounts/fireworks/models/kimi-k3"
+            k3_exports = (
+                f"export CLAUDE_CONFIG_DIR={shlex.quote(k3_config.as_posix())} && "
+                f"export ANTHROPIC_BASE_URL=https://api.fireworks.ai/inference && "
+                f"export ANTHROPIC_AUTH_TOKEN={shlex.quote(fireworks_key)} && "
+                f"export ANTHROPIC_API_KEY= && "
+                f"export ANTHROPIC_MODEL={k3_model} && "
+                f"export ANTHROPIC_DEFAULT_OPUS_MODEL={k3_model} && "
+                f"export ANTHROPIC_DEFAULT_SONNET_MODEL={k3_model} && "
+                f"export ANTHROPIC_DEFAULT_HAIKU_MODEL={k3_model} && "
+                f"export ANTHROPIC_DEFAULT_FABLE_MODEL={k3_model} && "
+                f"export CLAUDE_CODE_SUBAGENT_MODEL={k3_model} && "
+                f"export CLAUDE_CODE_AUTO_COMPACT_WINDOW=1048576 && "
+            )
+            shell_cmd = (
+                f"cd {shlex.quote(Path(rundir).as_posix())} && "
+                f"{k3_exports}"
+                f"{exec_cmd} {shlex.quote(full_prompt)}"
+            )
+        else:
+            shell_cmd = (
+                f"cd {shlex.quote(Path(rundir).as_posix())} && "
+                # ambient ANTHROPIC_API_KEY breaks the TrueFoundry gateway claude uses
+                "unset ANTHROPIC_API_KEY ANTHROPIC_API_KEY_BACKUP BACKUP_ANTHROPIC_API_KEY && "
+                f"{exec_cmd} {shlex.quote(full_prompt)}"
+            )
     # Ensure TFY_API_KEY is available inside the tmux session (the tmux server
     # may have been started before Hermes loaded .env, so it won't inherit the
     # key from the current shell). Export it explicitly in the shell command.
@@ -195,6 +249,7 @@ def _start(args: dict) -> dict:
         "executor": executor,
         "model": model,
         "effort": effort,
+        "model_provider": model_provider if executor == "claude" else None,
         "created_at": time.time(),
     }
     _write_text(artifact_dir / "meta.json", json.dumps(meta, indent=2))
@@ -832,6 +887,16 @@ CLAUDE_ORCHESTRATE_SCHEMA = {
             "model": {
                 "type": "string",
                 "description": "Model id to pin for this session (claude --model / codex -m). Omit for the executor default.",
+            },
+            "model_provider": {
+                "type": "string",
+                "enum": ["truefoundry", "fireworks"],
+                "description": (
+                    "Backend routing for the claude executor (start). "
+                    "truefoundry (default) = Claude models via the TF gateway; "
+                    "fireworks = Kimi K3 via Fireworks' Anthropic-compatible endpoint "
+                    "(isolated CLAUDE_CONFIG_DIR, ignores --model). Codex executor ignores this."
+                ),
             },
             "effort": {
                 "type": "string",
