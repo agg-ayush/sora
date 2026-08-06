@@ -56,10 +56,11 @@ Hermes is running.
 2. **The kanban claim is your safety net + heartbeat discipline.** It structurally
    prevents duplicate work even if you misjudge — but still read state first. The
    TTL is 900s (15 min): call `hermes kanban heartbeat <task_id> --note "<progress>"`
-   at each status.md write AND during any long `claude_orchestrate wait` (design
-   author/review/implementation waits can exceed 900s — without heartbeats the
-   claim expires and another T2 double-claims). Re-issue `wait` + heartbeat in a
-   loop until the session finishes.
+   at each status.md write AND between `claude_orchestrate wait` calls. **`wait`
+   blocks your event loop — you cannot heartbeat while blocked.** Use SHORT waits
+   (timeout=120) + heartbeat between waits; if the session is still `working`,
+   heartbeat then `wait` again. Long design/implementation turns routinely exceed
+   900s — without this loop the claim expires and another T2 double-claims.
 3. **Never trust an agent's self-report.** Verify with real tool output. `gate`
    reads the real diff; YOU run the test suite yourself. An agent writing
    `outcome=DONE` or "tests pass" is a claim, not evidence.
@@ -175,12 +176,13 @@ target repo to ground the design; it does not write to it.
    set status complete and write DONE to your outcome file."
 4. `claude_orchestrate wait` for the session; on `done`/`DONE` the doc exists at
    `<out-path>`. Do NOT read the doc content into your context — you only need
-   its path for the reviewer. **Heartbeat the kanban claim during the wait: a
-   high-effort Opus design turn can exceed the 900s claim TTL — without
-   heartbeats the claim expires mid-wait and another T2 can double-claim.** Call
-   `hermes kanban heartbeat <task_id> --note "design authoring in progress"` every
-   ~10 min while waiting (the `wait` action returns on state changes; re-issue it
-   + heartbeat in a loop until done).
+   its path for the reviewer. **The claim TTL is 900s and `wait` blocks your event
+   loop — you cannot heartbeat while blocked.** Use SHORT waits + heartbeats in a
+   loop: `wait` with `timeout=120` (2 min); if the session is still `working`
+   (timeout), call `hermes kanban heartbeat <task_id> --note "design authoring in
+   progress"`, then `wait` again. Repeat until the session finishes. A high-effort
+   design turn routinely exceeds 900s — without this loop the claim expires and
+   another T2 can double-claim.
 
 **1b.2 Design review** (Codex/Sol, cross-engine):
 1. `claude_orchestrate start` in a scratch dir, `executor=codex`,
@@ -199,9 +201,9 @@ target repo to ground the design; it does not write to it.
    nonblocking_suggestions:
    - <suggestion, or "none">
    ```"
-2. `claude_orchestrate wait`; read the VERDICT file (NOT the doc). **Heartbeat
-   the kanban claim during the wait** (same reason as 1b.1 — a review turn can
-   exceed the 900s TTL). Branch:
+2. `claude_orchestrate wait`; read the VERDICT file (NOT the doc). **Use the same
+   SHORT-wait + heartbeat loop as 1b.1** (timeout=120 per wait, heartbeat between
+   waits). Branch:
    - `approved: yes` → design accepted. Proceed to 1b.3 (attach + implement).
    - `approved: no` → write the blocking issues to a file (`<issues-file>`,
      out-of-repo). Start a NEW Claude Code author session
@@ -267,11 +269,10 @@ Repeat until all units done or a stop condition fires:
    - The kanban claim is independent of the coding executor. If claude is down,
      fall back to `executor=codex` — the claim stays held (no need to
      release/re-claim).
-3. `claude_orchestrate wait` (timeout e.g. 900, it returns early on
-   needs_input/stalled/done/exited).
-   - **During long waits, heartbeat the claim:** if the wait timeout is ≥900s or
-     you're doing multiple waits, call `hermes kanban heartbeat <task_id> --note
-     "unit N in progress"` between waits to prevent the 900s TTL from expiring.
+3. `claude_orchestrate wait` with SHORT timeouts + heartbeats between waits
+   (timeout=120 per wait; if still `working`, heartbeat then wait again — the
+   claim TTL is 900s and a long implementation turn can exceed it while `wait`
+   blocks your event loop, preventing heartbeats).
 4. Branch on the returned `state` + `outcome`:
    - `state=done` or `exited` → read `outcome`:
      - `DONE` → Phase 3 gate.
