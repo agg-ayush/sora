@@ -62,20 +62,6 @@ hermes gateway start
 # 8. Cron — orphan reaper (every 30 min)
 # Create via the cronjob tool or:
 hermes cron add "30m" --script ~/.hermes/scripts/orphan-reaper.py --no-agent
-
-# 9. (Optional) Mobile dashboard — amux's phone-accessible control plane.
-# amux manages its OWN workers (it spawns Claude Code/Codex sessions itself) —
-# it does NOT auto-discover the tier system's existing tmux sessions. To use
-# amux as a mobile dashboard for tier work, you'd need to register the tier
-# sessions as amux workers (amux register <name> --dir <repo>) — but then amux
-# would own those sessions, conflicting with the tier system's own lifecycle
-# management (T1 spawns T2s, T2 self-terminates, the reaper heals). The two
-# orchestration layers would fight over the same sessions.
-#
-# Recommendation: don't use amux as a mobile dashboard for the tier system —
-# the tier system's Telegram notifications (kanban notify-subscribe + hermes
-# send) are the mobile channel. Amux is better as a standalone tool for its
-# own workers, not as a viewer over the tier system's sessions.
 ```
 
 ## Usage

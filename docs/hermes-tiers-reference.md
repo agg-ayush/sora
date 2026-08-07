@@ -260,12 +260,6 @@ Additional prior art evaluated (2026-07-30 audit):
   interactive steering/`steer`/`interrupt`, no human merge gate. The tier system's
   cross-engine + kanban + human-gate requirements are load-bearing and Agent Teams
   doesn't provide them.
-- **amux** (mixpeek): open-source, tmux-native, self-healing, phone/web dashboard.
-  Its self-healing pattern (detect specific failure modes from the pane, auto-respond
-  via send-keys) is now **borrowed** in the `orphan-reaper` — it detects context
-  compaction prompts, `redacted_thinking` corruption, rate-limit prompts, and stuck
-  prompts, and auto-responds instead of just killing. The phone dashboard is a lighter
-  T0 Telegram alternative, not adopted (our stack is purpose-built + kanban-integrated).
 - **Ralph Workflow** (Ralph-Workflow/Ralph-Workflow): an orchestrator for the agents
   you already have (Claude Code, Codex CLI) — define a workflow in a TOML file,
   run overnight. Rejected: no kanban coordination, no interactive steering, no
