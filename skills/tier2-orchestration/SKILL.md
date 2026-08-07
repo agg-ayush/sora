@@ -76,12 +76,16 @@ Hermes is running.
    for: BLOCKED you cannot resolve, genuine ambiguity, all-done, or the human
    merge gate.
 7. **Claude auth is a soft dependency — never a hard blocker.** Before spawning ANY
-   Claude Code session (coding, design-author, design-revise, review), probe
-   `claude -p "reply PONG"` (~30s cap); timeout/nonzero → claude is down, fall back
-   to `executor=codex` for that step (the kanban claim is independent of the
-   executor). For design: cross-engine split weakens (author+reviewer both
-   codex-family) — note it in a kanban comment, proceed. Escalate only if BOTH
-   engines down.
+   Claude Code session (coding, design-author, design-revise, review), probe auth
+   via the plugin with the same `model_provider` the session will use:
+   `claude_orchestrate start` with `model_provider=fireworks` (the current routing),
+   a trivial prompt ("reply PONG"), and a short timeout. If it errors/exits → the
+   Fireworks path is down, fall back to `executor=codex` for that step (the kanban
+   claim is independent of the executor). Do NOT probe with a raw `claude -p` —
+   that checks the TF/Anthropic endpoint, not the Fireworks path, and reports
+   the wrong model group (a false `claude-teams-group` alarm). For design:
+   cross-engine split weakens (author+reviewer both codex-family) — note it in a
+   kanban comment, proceed. Escalate only if BOTH engines down.
    - **Stall handling:** `stalled` = pane shows NO activity indicator AND no status
      change (a thinking/working session is NOT stalled). On a genuinely stalled
      claude session: `interrupt` (Esc) once → `wait`; if still stalled, `diagnose`
@@ -159,10 +163,12 @@ SCRATCH DIR (NOT the target repo, NO worktree). The author session reads the
 target repo to ground the design; it does not write to it.
 
 **1b.1 Design authoring** (Kimi K3 via Fireworks, high effort):
-1. Probe claude auth: `claude -p "reply PONG"` (~30s cap). Timeout/nonzero →
-   claude down; fall back to `executor=codex` for the author step (note the
-   weakened cross-engine split in a kanban comment). Escalate only if BOTH
-   engines unavailable.
+1. Probe claude auth via the plugin (NOT a raw `claude -p` — that checks the
+   TF/Anthropic endpoint, not the Fireworks path): `claude_orchestrate start`
+   with `model_provider=fireworks`, a trivial prompt ("reply PONG"), and a short
+   timeout. If it errors or the session exits → the Fireworks path is down; fall
+   back to `executor=codex` for the author step (note the weakened cross-engine
+   split in a kanban comment). Escalate only if BOTH engines unavailable.
 2. Write the raw task to a file (`<task-file>`, out-of-repo). Choose an
    `<out-path>` for the design doc OUTSIDE any repo (task artifact dir or tmp).
 3. `claude_orchestrate start` in a SCRATCH DIR (not the target repo, no
@@ -269,6 +275,25 @@ Repeat until all units done or a stop condition fires:
    - The kanban claim is independent of the coding executor. If claude is down,
      fall back to `executor=codex` — the claim stays held (no need to
      release/re-claim).
+   - **Graphify seed (only when the main repo has a `.graphify/` graph):** the
+     worktree starts with NO graph (it's not committed, so `git worktree add`
+     doesn't propagate it). Right after `start` returns and the worktree exists,
+     seed it so the coding agent can run `graphify minimal-context` /
+     `affected-flows` from its first turn:
+     ```bash
+     MAIN_REPO=<the repo workdir>  # NOT the worktree path
+     WT=<the new worktree path>    # e.g. $MAIN_REPO/.worktrees/<name> or the path start reports
+     if [ -d "$MAIN_REPO/.graphify" ] && [ ! -d "$WT/.graphify" ]; then
+       cp -R "$MAIN_REPO/.graphify" "$WT/.graphify"
+       rm -f "$WT/.graphify/branch.json" "$WT/.graphify/worktree.json" "$WT/.graphify/needs_update"
+       (cd "$WT" && graphify update . --no-description --no-label --no-cluster >/dev/null 2>&1)
+     fi
+     ```
+     This is a cheap CP-copy + incremental reconcile against the branch's code —
+     NOT a cold build (26K-node content repo: seconds, no API cost). Skip it
+     silently if the main repo has no graph (app does, content does; a fresh repo
+     may not). Do not block the unit on the update finishing — it runs in the
+     worktree and the post-commit hook keeps it current from here.
 3. `claude_orchestrate wait` with SHORT timeouts + heartbeats between waits
    (timeout=120 per wait; if still `working`, heartbeat then wait again — the
    claim TTL is 900s and a long implementation turn can exceed it while `wait`
