@@ -10,7 +10,7 @@ plugin/     claude-orchestrate plugin (pure tmux session manager)
 plugins/    pr-review-toolkit patches (state-transition-reviewer specialist)
 skills/     tier1-suborchestration + tier2-orchestration skills
 scripts/    kanban-review.py (status transitions) + orphan-reaper.py (self-healing watchdog)
-docs/       hermes-tiers-reference.md (canonical architecture) + audit reports
+docs/       hermes-tiers-reference.md (canonical architecture) + audit.md
 config/     config.yaml.template, env.template, zshrc-snippet.sh (NO secrets)
 ```
 
