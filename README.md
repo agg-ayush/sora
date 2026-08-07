@@ -9,7 +9,7 @@ and config templates for the multi-tier autonomous coding pipeline.
 plugin/     claude-orchestrate plugin (pure tmux session manager)
 plugins/    pr-review-toolkit patches (state-transition-reviewer specialist)
 skills/     tier1-suborchestration + tier2-orchestration skills
-scripts/    kanban-review.py (status transitions) + orphan-reaper.py (watchdog)
+scripts/    kanban-review.py (status transitions) + orphan-reaper.py (self-healing watchdog)
 docs/       hermes-tiers-reference.md (canonical architecture) + audit reports
 config/     config.yaml.template, env.template, zshrc-snippet.sh (NO secrets)
 ```
@@ -62,6 +62,18 @@ hermes gateway start
 # 8. Cron — orphan reaper (every 30 min)
 # Create via the cronjob tool or:
 hermes cron add "30m" --script ~/.hermes/scripts/orphan-reaper.py --no-agent
+
+# 9. (Optional) Mobile dashboard — amux's phone-accessible control plane.
+# Runs alongside the tier system (separate tool, not replacing it). Gives you
+# a phone-accessible web dashboard to monitor/steer the tmux sessions the tier
+# system spawns. Install amux separately if you want mobile access:
+#   git clone https://github.com/mixpeek/amux && cd amux && ./install.sh
+#   amux serve   # → https://localhost:8822 (phone-accessible)
+# Note: amux runs its own control plane (its own kanban, its own dashboard) —
+# it's a separate tool for mobile monitoring, not a replacement for the tier
+# system's kanban/orchestration. The tier system's kanban + dashboard remain the
+# source of truth; amux's dashboard is a mobile-accessible view over the same
+# tmux sessions.
 ```
 
 ## Usage
@@ -71,5 +83,19 @@ holo 1      # start Tier-1 (per-repo dispatcher)
 holo 2      # start Tier-2 (per-issue supervisor, usually spawned by T1)
 holo dash   # open the web dashboard (localhost:9119)
 ```
+
+## Self-healing watchdog
+
+The `orphan-reaper.py` cron (every 30 min) doesn't just kill idle sessions — it
+**heals recoverable failure modes** before considering a session idle:
+
+- **Context compaction prompt** → auto-answer "y" (compact the conversation)
+- **`redacted_thinking` corruption** → kill + supervisor respawns (targeted kill)
+- **Rate-limit prompt** (`/rate-limit-options`) → auto-press option 1 (stop + wait)
+- **Stuck prompt** (y/n question) → auto-answer "y" (proceed)
+
+Only kills genuinely idle sessions (no active work, no recoverable failure, no
+prompt to answer). Never kills an actively-working session or a session at a
+prompt waiting for a steer.
 
 See `docs/hermes-tiers-reference.md` for the full architecture reference.
