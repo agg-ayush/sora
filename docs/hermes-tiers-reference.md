@@ -261,6 +261,19 @@ Additional prior art evaluated (2026-07-30 audit):
   crudely (kill only, no resurrect); its phone dashboard is a lighter T0 Telegram
   alternative. Not adopted (our plugin is purpose-built + integrated with kanban),
   but the self-healing pattern is worth borrowing if the reaper evolves beyond kill.
+  The watchdog detects specific failure modes (context compaction,
+  redacted_thinking corruption, rate-limit prompts, stuck prompts) and auto-responds
+  — a real improvement over our kill-only reaper.
+- **Ralph Workflow** (Ralph-Workflow/Ralph-Workflow): an orchestrator for the agents
+  you already have (Claude Code, Codex CLI) — define a workflow in a TOML file,
+  run overnight. Rejected: no kanban coordination, no interactive steering, no
+  cross-engine review, no human gate, no persistent memory. Solves a simpler
+  problem (single task, not a multi-issue pipeline).
+- **Beads** (gastownhall/beads): distributed graph issue tracker for agents (Dolt
+  backend). Rejected: redundant with kanban (task tracking + dependencies +
+  dashboard + notifications already covered). The persistent-memory angle
+  (`bd prime`/`bd remember`) is interesting but we already have reference docs +
+  skills. Same category as other rejected prior art.
 - **Effort-enum drift note:** the plugin's `effort` validator must match `claude --help`'s
   accepted values. A 2026-07-30 audit caught `auto` (invalid, claude rejects it) and a
   missing `xhigh`. Fixed to `{low, medium, high, xhigh, max}`. On every `claude` CLI
