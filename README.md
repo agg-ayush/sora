@@ -64,16 +64,18 @@ hermes gateway start
 hermes cron add "30m" --script ~/.hermes/scripts/orphan-reaper.py --no-agent
 
 # 9. (Optional) Mobile dashboard — amux's phone-accessible control plane.
-# Runs alongside the tier system (separate tool, not replacing it). Gives you
-# a phone-accessible web dashboard to monitor/steer the tmux sessions the tier
-# system spawns. Install amux separately if you want mobile access:
-#   git clone https://github.com/mixpeek/amux && cd amux && ./install.sh
-#   amux serve   # → https://localhost:8822 (phone-accessible)
-# Note: amux runs its own control plane (its own kanban, its own dashboard) —
-# it's a separate tool for mobile monitoring, not a replacement for the tier
-# system's kanban/orchestration. The tier system's kanban + dashboard remain the
-# source of truth; amux's dashboard is a mobile-accessible view over the same
-# tmux sessions.
+# amux manages its OWN workers (it spawns Claude Code/Codex sessions itself) —
+# it does NOT auto-discover the tier system's existing tmux sessions. To use
+# amux as a mobile dashboard for tier work, you'd need to register the tier
+# sessions as amux workers (amux register <name> --dir <repo>) — but then amux
+# would own those sessions, conflicting with the tier system's own lifecycle
+# management (T1 spawns T2s, T2 self-terminates, the reaper heals). The two
+# orchestration layers would fight over the same sessions.
+#
+# Recommendation: don't use amux as a mobile dashboard for the tier system —
+# the tier system's Telegram notifications (kanban notify-subscribe + hermes
+# send) are the mobile channel. Amux is better as a standalone tool for its
+# own workers, not as a viewer over the tier system's sessions.
 ```
 
 ## Usage
