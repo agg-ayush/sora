@@ -193,10 +193,14 @@ exit gate runs both concurrently, acting on tests first if they fail fast.
 
 ## Orphan reaper
 
-`~/.hermes/scripts/orphan-reaper.py` — silent `no_agent` cron (every 30m). Kills
-idle tier tmux sessions (never active ones showing "esc to interrupt"). Kanban's
-`dispatch` handles stale claims (dead-process detection). Together they prevent
-orphaned sessions from accumulating.
+`~/.hermes/scripts/orphan-reaper.py` — silent `no_agent` cron (every 30m). **Heals
+recoverable failure modes** (context-compaction prompt, `redacted_thinking`
+corruption, rate-limit prompt, stuck prompt) via send-keys before considering a
+session idle; kills genuinely IDLE tier tmux sessions (no active work, no
+recoverable failure, no prompt to answer). Never kills an actively-working session
+or a session at a prompt waiting for a steer. Kanban's `dispatch` handles stale
+claims (dead-process detection). Together they prevent orphaned sessions from
+accumulating and recover sessions that would otherwise stall.
 
 ## What's deferred
 
@@ -257,13 +261,11 @@ Additional prior art evaluated (2026-07-30 audit):
   cross-engine + kanban + human-gate requirements are load-bearing and Agent Teams
   doesn't provide them.
 - **amux** (mixpeek): open-source, tmux-native, self-healing, phone/web dashboard.
-  Its self-healing (auto-restart on crash) is a gap the `orphan-reaper` fills more
-  crudely (kill only, no resurrect); its phone dashboard is a lighter T0 Telegram
-  alternative. Not adopted (our plugin is purpose-built + integrated with kanban),
-  but the self-healing pattern is worth borrowing if the reaper evolves beyond kill.
-  The watchdog detects specific failure modes (context compaction,
-  redacted_thinking corruption, rate-limit prompts, stuck prompts) and auto-responds
-  — a real improvement over our kill-only reaper.
+  Its self-healing pattern (detect specific failure modes from the pane, auto-respond
+  via send-keys) is now **borrowed** in the `orphan-reaper` — it detects context
+  compaction prompts, `redacted_thinking` corruption, rate-limit prompts, and stuck
+  prompts, and auto-responds instead of just killing. The phone dashboard is a lighter
+  T0 Telegram alternative, not adopted (our stack is purpose-built + kanban-integrated).
 - **Ralph Workflow** (Ralph-Workflow/Ralph-Workflow): an orchestrator for the agents
   you already have (Claude Code, Codex CLI) — define a workflow in a TOML file,
   run overnight. Rejected: no kanban coordination, no interactive steering, no
