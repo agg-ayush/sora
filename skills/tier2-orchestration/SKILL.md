@@ -384,9 +384,14 @@ session** (not the implementer session):
    task's worktree (`workdir=<rundir>`). Prompt it to run the pr-review-toolkit
    review over this unit's changes and write a structured verdict to an
    out-of-repo file, e.g.: "Run `/pr-review-toolkit:review-pr` on the changes in
-   this worktree (diff base <base_sha>..HEAD) against <brief-file>. Then write your
+   this worktree (diff base <base_sha>..HEAD) against <brief-file>. Include the
+   state-transition-reviewer if the diff introduces stateful behavior (latches,
+   refs, machine context, admission gates, persistence, restore/seed paths) —
+   it enumerates state transitions and probes failure-then-retry, reset-coverage,
+   mid-flight-config-change, and dual-writer-desync paths. Then write your
    verdict to <verdict-path> as: `spec: pass|fail`, `quality: approved|needs_fixes`,
-   `confidence: <0-100>`, `findings: [...]`. Set status complete + write DONE to
+   `confidence: <0-100>`, `findings: [...]`, plus `state_transitions: clean|needs_fixes`
+   if the stateful reviewer fired. Set status complete + write DONE to
    your outcome file." Launch with `effort=medium` (high effort is the main claude
    hang trigger; a structured-verdict review doesn't need it). Do NOT pass `model`
    in the fireworks path (K3 is set via env).
@@ -405,7 +410,8 @@ session** (not the implementer session):
    `/pr-review-toolkit:review-pr` can't run (it's a Claude Code plugin). Fall back
    to the Hermes-native **`requesting-code-review`** skill — run its specialist
    reviewer batch (silent-failure-hunter, code-reviewer, comment-analyzer,
-   type-design-analyzer, pr-test-analyzer) via `delegate_task` on the diff
+   type-design-analyzer, pr-test-analyzer, **state-transition-reviewer**) via
+   `delegate_task` on the diff
    (`base_sha..HEAD`). These run on the global delegation model (kimi-k3) — that's
    fine, it's the fallback path. Fold their findings into the same structured
    verdict; treat CRITICAL/HIGH the same as primary-review failures. Note in the

@@ -167,15 +167,29 @@ Claude Code auths through a gateway that occasionally times out. Before spawning
 claude session, probe `claude -p "reply PONG"` (~30s cap); if it fails, fall back:
 - Coding → `executor=codex`
 - T1 author/review → Codex sessions
-- T2 code review (`/pr-review-toolkit:review-pr`) → `requesting-code-review` skill
-  via delegate_task (glm-5p2)
+- **T2 code review** (`/pr-review-toolkit:review-pr`) → `requesting-code-review` skill
+  via delegate_task (kimi-k3)
 
-**Effort:** T1 design author/reviser = Opus at `effort=high` (design is
-judgment-heavy). T2 coding sessions = `effort=medium`. `effort=high` on Opus via the
-TF gateway can occasionally wedge, but a *thinking* session is not a stalled one —
-stall detection now ignores file-staleness when the pane shows an activity
-indicator, so it won't false-trip. Genuine stall (no indicator + no file change) →
-`interrupt` (Esc) once → `diagnose` → fall back to Codex.
+**Effort:** T2 design author/reviser = `effort=high` (design is judgment-heavy, kimi-k3
+via Fireworks). T2 coding sessions = `effort=medium`. T2 code review = `effort=medium`.
+A *thinking* session is not a stalled one — stall detection ignores file-staleness
+when the pane shows an activity indicator. Genuine stall (no indicator + no file
+change) → `interrupt` (Esc) once → `diagnose` → fall back to Codex.
+
+## State-transition review
+
+The pr-review-toolkit has a **state-transition-reviewer** specialist (7th agent,
+`agents/state-transition-reviewer.md`). It fires only when the diff introduces
+stateful behavior (latches, refs, machine context, admission gates, persistence,
+restore/seed paths). It enumerates the transition table (set/clear/reset/read for
+every identity) and probes four adversarial paths: failure-then-retry, reset
+coverage, mid-flight config change, dual-writer desync. Output: a missing-transition
+test list for pr-test-analyzer to verify coverage. Catches the class of bug where
+individual hunks look right but the composed state machine deadlocks (e.g. a latch
+set on failure that's never cleared on retry).
+
+**Gate order:** tests (fast, fail-fast) then review (expensive) in PARALLEL — the
+exit gate runs both concurrently, acting on tests first if they fail fast.
 
 ## Orphan reaper
 

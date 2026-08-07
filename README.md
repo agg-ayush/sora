@@ -7,6 +7,7 @@ and config templates for the multi-tier autonomous coding pipeline.
 
 ```
 plugin/     claude-orchestrate plugin (pure tmux session manager)
+plugins/    pr-review-toolkit patches (state-transition-reviewer specialist)
 skills/     tier1-suborchestration + tier2-orchestration skills
 scripts/    kanban-review.py (status transitions) + orphan-reaper.py (watchdog)
 docs/       hermes-tiers-reference.md (canonical architecture) + audit reports
@@ -20,6 +21,13 @@ git clone git@github.com:agg-ayush/hermes-tier-setup.git ~/hermes-tier-setup
 
 # 1. Plugin → symlink into Hermes plugins
 ln -sf ~/hermes-tier-setup/plugin ~/.hermes/plugins/claude-orchestrate
+
+# 1b. pr-review-toolkit patch → copy the state-transition-reviewer into the
+# Claude Code plugin cache (adds the specialist + wires it into review-pr)
+cp ~/hermes-tier-setup/plugins/pr-review-toolkit/agents/state-transition-reviewer.md \
+   ~/.claude/plugins/cache/claude-plugins-official/pr-review-toolkit/*/agents/
+cp ~/hermes-tier-setup/plugins/pr-review-toolkit/commands/review-pr.md \
+   ~/.claude/plugins/cache/claude-plugins-official/pr-review-toolkit/*/commands/
 
 # 2. Skills → symlink into Hermes skills
 mkdir -p ~/.hermes/skills/autonomous-ai-agents
