@@ -9,7 +9,8 @@ model:
   max_tokens: 128000
 
 # Provider config — hermes's own model calls authenticate via TRUEFOUNDRY_API_KEY.
-# (The claude/codex CLI subprocesses use TFY_API_KEY separately, exported by the plugin.)
+# (The claude/codex CLI subprocesses use TFY_API_KEY for TF-routed models, or
+# FIREWORKS_API_KEY for kimi-k3 via Fireworks — both exported by the plugin.)
 providers:
   truefoundry:
     api: https://<llm-gateway>.truefoundry.cloud/api/llm/api/inference/openai/v1

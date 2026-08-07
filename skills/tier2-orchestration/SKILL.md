@@ -1,6 +1,6 @@
 ---
 name: tier2-orchestration
-description: "Drive a single coding issue from a raw task to a human-approved GitHub PR merge as a Tier-2 supervisor owning BOTH design and implementation. Use when orchestrating autonomous coding work: (design) author a design doc via a Claude Code Opus session, cross-engine review it via a Codex/Sol session (3-round cap); (implement) assign the accepted design to a CLI coding agent in an isolated worktree, keep it working with stall detection, run an exit gate (impl-complete + pr-review-toolkit code review + separate-model test-fix), then raise a GitHub PR (keeping its description current as the review surface) and stop at human approval/merge on the PR. Sequences the claude_orchestrate tool (Claude Code / Codex sessions), a delegate_task test-fixer, gh for PRs, and kanban (issue tracking + claim lock + blocks + design-doc attachment)."
+description: "Drive a single coding issue from a raw task to a human-approved GitHub PR merge as a Tier-2 supervisor owning BOTH design and implementation. Use when orchestrating autonomous coding work: (design) author a design doc via a Kimi K3 session (Fireworks, high effort), cross-engine review it via a Codex/Sol session (3-round cap); (implement) assign the accepted design to a CLI coding agent in an isolated worktree, keep it working with stall detection, run an exit gate (impl-complete + pr-review-toolkit code review + separate-model test-fix), then raise a GitHub PR (keeping its description current as the review surface) and stop at human approval/merge on the PR. Sequences the claude_orchestrate tool (Claude Code / Codex sessions), a delegate_task test-fixer, gh for PRs, and kanban (issue tracking + claim lock + blocks + design-doc attachment)."
 version: 0.3.0
 author: Hermes Agent
 license: MIT
@@ -13,11 +13,11 @@ metadata:
 # Tier-2 Design + Implementation Supervisor
 
 Drive ONE issue from a raw task to a human-approved GitHub PR merge. You own TWO
-phases: (1) **design** — author a design doc via a Claude Code Opus session and
-cross-engine review it via a Codex/Sol session (3-round cap), and (2)
-**implementation** — turn the accepted design into code via a CLI coding agent in
-an isolated worktree, gate it, and raise a PR. You are the supervisor: you
-coordinate, you never write the design or the implementation yourself.
+phases: (1) **design** — author a design doc via a Kimi K3 session (Fireworks,
+high effort) and cross-engine review it via a Codex/Sol session (3-round cap),
+and (2) **implementation** — turn the accepted design into code via a CLI coding
+agent in an isolated worktree, gate it, and raise a PR. You are the supervisor:
+you coordinate, you never write the design or the implementation yourself.
 
 ## Activation (how a T2 session starts)
 
@@ -66,9 +66,8 @@ Hermes is running.
    `outcome=DONE` or "tests pass" is a claim, not evidence.
 4. **Boundary rule.** Coding sessions + code review → `claude_orchestrate` (review
    is a Claude Code `/pr-review-toolkit:review-pr` session; kimi-k3 fallback when
-   claude auth is down). Test-fix → a `delegate_task` sub-agent
-   on a light routed model. State + control flow → kanban CLI + on-disk state. Do
-   not blur these.
+   claude auth is down). Test-fix → a `delegate_task` sub-agent (kimi-k3). State +
+   control flow → kanban CLI + on-disk state. Do not blur these.
 5. **One writer per issue.** Never two concurrent implementation sessions on one
    issue. The kanban claim enforces this atomically. Distinct tasks across
    DIFFERENT issues are fine.
@@ -97,13 +96,11 @@ Hermes is running.
    async — a `delegate_task` result, a human PR approval — poll the specific
    signal directly, don't sleep-spin.)
 9. **Design = judgment → use CLI coding-agent sessions, not inline reasoning.**
-   Orchestrate a Claude Code author session (`model_provider=fireworks`, i.e.
-   Kimi K3, `effort=high`) and a Codex/Sol review session (cross-engine) via
-   `claude_orchestrate`. Read the VERDICT file, never the design-doc body, into
-   your own context. Author and reviewer MUST be different model families —
-   never let the author review its own doc. (The `claude` CLI here is routed to
-   Kimi K3 via Fireworks' Anthropic-compatible endpoint, not an Anthropic model —
-   the cross-engine split is Fireworks/K3 author vs OpenAI/Sol reviewer.)
+   Orchestrate a Kimi K3 author session (`model_provider=fireworks`, `effort=high`)
+   and a Codex/Sol review session (cross-engine) via `claude_orchestrate`. Read
+   the VERDICT file, never the design-doc body, into your own context. Author and
+   reviewer MUST be different model families — never let the author review its own
+   doc.
 10. **Design-review rounds capped at 3.** After the 3rd review, if still not
     approved → STOP and ESCALATE with the latest doc + outstanding blocking issues.
     Do NOT start a 4th round. A blocking issue that reflects genuine ambiguity in

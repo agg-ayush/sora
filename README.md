@@ -48,11 +48,11 @@ cp ~/hermes-tier-setup/config/env.template ~/.hermes/.env
 cat ~/hermes-tier-setup/config/zshrc-snippet.sh >> ~/.zshrc
 source ~/.zshrc
 
-# 6. Kanban boards — bind each repo to its board
+# 6. Kanban boards — bind each repo to its board (adjust paths for your machine)
 hermes kanban boards create alpha-learn-content-gen
-hermes kanban boards set-default-workdir alpha-learn-content-gen /path/to/Trilogy/content
+hermes kanban boards set-default-workdir alpha-learn-content-gen /path/to/your/content-repo
 hermes kanban boards create learning-app
-hermes kanban boards set-default-workdir learning-app /path/to/Trilogy/app
+hermes kanban boards set-default-workdir learning-app /path/to/your/app-repo
 
 # 7. Gateway service
 hermes gateway setup   # configure Telegram etc.

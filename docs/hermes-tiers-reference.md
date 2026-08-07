@@ -1,6 +1,7 @@
 # Hermes Multi-Tier Orchestration — Reference
 
-**Last updated: 2026-07-23.** The tier system is built, migrated to kanban, and E2E validated.
+**Last updated: 2026-07-30.** The tier system is built, migrated to kanban, E2E
+validated, and audited (audit-2026-07-30).
 
 ---
 
@@ -22,7 +23,7 @@ authors it.
   each). Points the user at the dashboard for progress.
 - **T2** (per-issue, spawned in tmux) — a *design + implementation supervisor*.
   Claims the kanban task (atomic lock). If needs-design (and no doc was handed
-  in), runs the design author (Claude/Opus, high effort) + design review
+  in), runs the design author (Kimi K3 via Fireworks, high effort) + design review
   (Codex/Sol, cross-engine, 3-round cap) loop ITSELF, attaches the accepted doc,
   then implements unit-by-unit against it. Spawns T3 coding sessions in isolated
   worktrees, runs the exit gate (impl + tests + review — each gate step that
@@ -30,7 +31,8 @@ authors it.
   pings the human on Telegram, stops at human merge approval, self-terminates
   when done. Heartbeats kanban to keep the claim alive (TTL 900s).
   Never writes the implementation itself.
-- **T3** — the executor: Claude Code / Codex CLI, driven in tmux by the
+- **T3** — the executor: the Claude Code CLI (routed to kimi-k3 via Fireworks'
+  Anthropic-compatible endpoint) or the Codex CLI, driven in tmux by the
   `claude-orchestrate` plugin. The only layer that reads or writes repo files. One
   session per work unit, whatever the kind: design, design review, implementation,
   tests, code review. Reports `DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED`.
@@ -145,13 +147,11 @@ ordering). Correct: `hermes kanban block --kind needs_input <task_id> <reason>`.
 
 ## Gate order (Phase 3)
 
-3.1 impl-complete → **3.2 tests** (fail-fast) → **3.3 review** (parallel with
-tests where possible) → 3.4 adversarial QA (optional, high-risk only).
-
-Tests before review: tests are a fast deterministic gate; review is expensive.
-Running review on code that fails its tests wastes a round. Tests-first means the
-reviewer sees a passing baseline; its coverage findings (pr-test-analyzer) then
-lead to additional tests you can validate.
+Tests and review run in **PARALLEL** (kick off both simultaneously — they inspect
+the same diff independently). But if tests fail fast, cancel/ignore the review
+round rather than acting on review findings for code that's about to change. The
+fail-fast logic applies: address the test failure first, re-run both once the
+code is stable. This avoids wasting a review round on code about to change.
 
 ## Phase 4 — PR + human approval
 
