@@ -1,7 +1,7 @@
 # Hermes Multi-Tier Orchestration — Reference
 
-**Last updated: 2026-07-30.** The tier system is built, migrated to kanban, E2E
-validated, and audited (audit-2026-07-30).
+**Last updated: 2026-08-08.** The tier system is built, migrated to kanban, E2E
+validated, audited (audit-2026-07-30), and self-healing reaper added.
 
 ---
 
