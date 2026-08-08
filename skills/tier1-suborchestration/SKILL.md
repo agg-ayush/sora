@@ -148,7 +148,7 @@ brief as a SEPARATE step from the submit, and VERIFY it actually started:
 tmux new-session -d -s t2-<task_id> -x 200 -y 50 'hermes -s tier2-orchestration --cli'
 sleep 6                          # let Hermes boot to its input prompt
 # send the brief TEXT only (literal, no Enter in the same call):
-tmux send-keys -t t2-<task_id> -l 'You are the Tier-2 supervisor for kanban task <task_id> on board <board-slug> (repo <workdir>, base <base_branch>). Pass --board <board-slug> on every hermes kanban call. Triage: needs-design=<yes|no>. <If yes: run your design author→review loop first, attach the accepted doc, then implement. If no: implement directly.> Read the task body and drive it to a human-approved merge.'
+tmux send-keys -t t2-<task_id> -l 'You are the Tier-2 supervisor for kanban task <task_id> on board <board-slug> (repo <workdir>, base <base_branch>). Pass --board <board-slug> on every hermes kanban call. Triage: needs-design=<yes|no>. <If yes: run your design author→review loop first, attach the accepted doc, then implement. If no: implement directly.> Read the task body and drive it to a human-approved merge. After the human merges, run your Phase 5 cleanup: close the task via `python3 ~/.hermes/scripts/kanban-review.py <task_id> --board <slug> --to done --result "merged via PR #N"` (kanban complete fails from review state), then reclaim the claim and self-terminate.'
 sleep 1
 tmux send-keys -t t2-<task_id> Enter    # submit as a SEPARATE keystroke
 ```
@@ -187,6 +187,33 @@ next issue — you are still warm.
 - T2 reports a blocker it can't resolve (design non-convergence, missing access,
   etc.) — relay it; T2 escalates design-loop issues to you only if it genuinely
   can't converge, and you relay those to the human.
+
+## Closing a task after merge (task lifecycle)
+
+T2 sessions often exit leaving the task in `review` (Phase 4 hands off "awaiting
+merge" and the session stops before Phase 5 cleanup). Once the PR is actually
+merged, YOU close the task:
+
+- **First verify the merge on GitHub, not the kanban board** — `gh pr view <N>
+  --json state,mergeCommit`. The board is bookkeeping; the merge is the fact.
+- **`hermes kanban complete <task_id>` is BROKEN from the `review` state** — it
+  returns "unknown id or terminal state" even when the task exists and all runs
+  are closed (reproduced: the trigger is the `review` status itself, not a stale
+  run lock). `promote` only works from todo/blocked, `unblock` only from
+  blocked, `reclaim` only from running. There is no clean `kanban` CLI path out
+  of `review`.
+- **Workaround — use the transition helper** (the same one the T2 skill's Phase
+  5 uses), NOT raw SQL:
+  ```
+  python3 ~/.hermes/scripts/kanban-review.py <task_id> --board <slug> --to done \
+    --result "merged via PR #N"
+  ```
+  It handles review→done (and running→done). This is the sanctioned close path;
+  `complete` should be fixed in Hermes to accept `review`, but until it is, use
+  the helper.
+- Prevention: tell T2 in the handoff brief to run its Phase 5 cleanup (close the
+  task via the helper) before exiting — the norm is it exits in `review`, so
+  expect to close it yourself via the helper.
 
 ## Pitfalls
 - Gold-plating a trivial build task with a needs-design flag → triage honestly.
