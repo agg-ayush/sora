@@ -34,7 +34,7 @@ The same `TFY_API_KEY` is read at runtime by the QC dashboard, the agent-supervi
    `curl -s -o /dev/null -w '%{http_code}' -H "x-tfy-api-key: <new>" https://<llm-gateway>/api/llm/api/inference/openai/models`
 3. Update every store in the table above.
 4. Restart the processes that hold the old key in memory:
-   - QC Linux box: recreate the `qc-dashboard` container (restart does not re-read `.env`); same URL/DNS, no mapping changes.
+   - QC Linux box: recreate the `qc-dashboard` container (restart does not re-read `.env`); same URL/DNS, no mapping changes. **Also recreate `agent-supervisor`** — on the supervised arch it is a *separate* container that reads the same `.env`, and new agent sessions spawn through it, so a stale supervisor key 401s even when the dashboard is updated. Both containers must be recreated.
    - QC Windows host: restart the qc-dashboard + agent-supervisor services.
    - Generation fleets: `Stop-ScheduledTask` / `Start-ScheduledTask` the worker task on each running baseline + live clone via SSM Run Command (no reboot, no ASG change). Burst clones launched later self-heal.
    - CI: nothing — next run picks it up.
