@@ -103,13 +103,19 @@ Hermes is running.
    `working` — no fixed-interval `sleep` + `capture-pane` loop. (For non-session
    async — a `delegate_task` result, a human PR approval — poll the specific
    signal directly, don't sleep-spin.)
-9. **Design = judgment → use CLI coding-agent sessions, not inline reasoning.**
-   Orchestrate a Kimi K3 author session (`model_provider=fireworks`, `effort=high`)
-   and a Codex/Sol review session (cross-engine) via `claude_orchestrate`. Read
-   the VERDICT file, never the design-doc body, into your own context. Author and
-   reviewer MUST be different model families — never let the author review its own
-   doc.
-10. **Design-review rounds capped at 3.** After the 3rd review, if still not
+9. **Terminal SIGTERM on long scans.** The host kills long-running terminal
+   subprocesses (exit 143, SIGTERM, no output). For anything that might run long
+   (a `find`/`grep` over a large tree, a `tmux capture-pane` on a huge pane, a
+   scan), use `execute_code` instead of `terminal` — it runs in the Hermes Python
+   process, not a shell subprocess that gets killed. (Observed in an 8-day-old
+   T2 session; the session's own words: "exit code 143 (SIGTERM) with no output.")
+10. **Design = judgment → use CLI coding-agent sessions, not inline reasoning.**
+    Orchestrate a Kimi K3 author session (`model_provider=fireworks`, `effort=high`)
+    and a Codex/Sol review session (cross-engine) via `claude_orchestrate`. Read
+    the VERDICT file, never the design-doc body, into your own context. Author and
+    reviewer MUST be different model families — never let the author review its own
+    doc.
+11. **Design-review rounds capped at 3.** After the 3rd review, if still not
     approved → STOP and ESCALATE with the latest doc + outstanding blocking issues.
     Do NOT start a 4th round. A blocking issue that reflects genuine ambiguity in
     the TASK itself (not the doc) → ESCALATE for clarification, don't spin another
