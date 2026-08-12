@@ -64,7 +64,15 @@ Hermes is running.
 3. **Never trust an agent's self-report.** Verify with real tool output. `gate`
    reads the real diff; YOU run the test suite yourself. An agent writing
    `outcome=DONE` or "tests pass" is a claim, not evidence.
-4. **Boundary rule.** Coding sessions + code review → `claude_orchestrate` (review
+4. **Code comment/docstring conventions — enforce in every coding-session
+   prompt.** The T3 worker (Claude Code, kimi-k3) does not inherit Hermes memory
+   or the user's global comment conventions. Every coding-session prompt (Phase 2
+   implementation, Phase 3.3 review-fix) must include: terse, present-tense,
+   necessary only — no restating what the code shows, no issue/PR references, no
+   narrating past/fixed behavior. Docstrings: only what's necessary — what it
+   does + non-obvious caller contract; no design-rationale or 'why' narration the
+   code already shows. Prefer no comment over a noisy one.
+5. **Boundary rule.** Coding sessions + code review → `claude_orchestrate` (review
    is a Claude Code `/pr-review-toolkit:review-pr` session; kimi-k3 fallback when
    claude auth is down). Test-fix → a `delegate_task` sub-agent (kimi-k3). State +
    control flow → kanban CLI + on-disk state. Do not blur these.
@@ -265,7 +273,11 @@ Repeat until all units done or a stop condition fires:
 2. `claude_orchestrate start`: `task_id`, `workdir`, `worktree=<name>`,
    `executor=claude`, `model_provider=fireworks` (Kimi K3), `effort=medium`,
    `prompt` = "Read <brief-file> and the
-   design doc, implement this unit." (points at files, not pasted text).
+   design doc, implement this unit. Code comments/docstrings: terse, present-tense,
+   necessary only — no restating what the code shows, no issue/PR references, no
+   narrating past/fixed behavior. Docstrings: only what's necessary — what it does
+   + non-obvious caller contract; no design-rationale or 'why' narration the code
+   already shows. Prefer no comment over a noisy one." (points at files, not pasted text).
    - `task_id` for the plugin is the tmux session name (e.g. `t2-<TASK_ID>-u3`).
      Keep it lowercase. The kanban task_id is separate and used for claim/comment/
      heartbeat/complete calls.
