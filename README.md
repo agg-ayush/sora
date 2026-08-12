@@ -44,6 +44,18 @@ cp ~/hermes-tier-setup/config/config.yaml.template ~/.hermes/config.yaml
 cp ~/hermes-tier-setup/config/env.template ~/.hermes/.env
 # edit ~/.hermes/.env with real API keys
 
+# 4b. kimi-k3 isolated config — the plugin's fireworks path uses
+# CLAUDE_CONFIG_DIR=~/.hermes/claude-k3-config/ to isolate the kimi-k3 session
+# from the TF-gateway settings.json (which would otherwise override the env-var
+# routing). The isolated config should have the user's real Claude Code settings
+# + skills + plugins, with the TF-gateway env vars removed. Set it up once:
+#   cp -R ~/.claude/skills ~/.claude/plugins ~/.hermes/claude-k3-config/
+#   cp ~/.claude/CLAUDE.md ~/.hermes/claude-k3-config/CLAUDE.md
+#   python3 -c "merge ~/.claude/settings.json minus TF env vars into
+#     ~/.hermes/claude-k3-config/settings.json (keep skipDangerousModePermissionPrompt)"
+# The plugin pre-seeds the isolated .claude.json (onboarding + API-key approval)
+# on first run — no manual step needed.
+
 # 5. Shell aliases — add holo function to ~/.zshrc
 cat ~/hermes-tier-setup/config/zshrc-snippet.sh >> ~/.zshrc
 source ~/.zshrc
