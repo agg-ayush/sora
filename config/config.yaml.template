@@ -23,3 +23,10 @@ display:
 
 # Gateway: Telegram configured (add/remove platforms as needed).
 # Run `hermes gateway setup` to configure platforms interactively.
+
+# Kanban: disable auto-decompose — the tier system triages + dispatches manually
+# (T1 → T2), not via the kanban dispatcher's auto-decompose fan-out. The default
+# (true) causes runaway fan-out (decomposes ready/triage tasks, spawns workers
+# that crash, re-dispatches). Leave it off.
+kanban:
+  auto_decompose: false
