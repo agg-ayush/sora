@@ -6,23 +6,16 @@
 # TF-gateway env vars removed (the plugin overrides ANTHROPIC_BASE_URL +
 # ANTHROPIC_AUTH_TOKEN to Fireworks).
 
-# settings.json — merge the user's real settings minus the TF-gateway env vars.
-# Keep skipDangerousModePermissionPrompt. The plugin pre-seeds .claude.json
-# (onboarding + API-key approval) on first run.
+# settings.json — merge the user's real settings minus the TF-gateway env vars
+# (ANTHROPIC_BASE_URL, ANTHROPIC_CUSTOM_HEADERS, ANTHROPIC_MODEL, and the
+# ANTHROPIC_DEFAULT_*_MODEL vars). Keep skipDangerousModePermissionPrompt. The
+# plugin pre-seeds .claude.json (onboarding + API-key approval) on first run.
+#
+# Structure (fill in your own values for the env keys you use):
 {
   "env": {
     "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1",
-    "OPENAI_API_KEY": "",
-    "CLAUDE_API_KEY": "",
-    "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
-    "GEMINI_API_KEY": "",
-    "FIREWORKS_API_KEY": "",
-    "ELEVENLABS_API_KEY": "",
-    "LESSON_ROOT_DIR": "/path/to/your/lessons",
-    "ATHENA_UPLOAD_USERNAME": "",
-    "ATHENA_UPLOAD_PASSWORD": "",
-    "GRAPHQL_ENDPOINT": "",
-    "AWS_USER_POOLS_WEB_CLIENT_ID": ""
+    "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1"
   },
   "skipDangerousModePermissionPrompt": true
 }
