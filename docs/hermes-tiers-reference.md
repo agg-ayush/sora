@@ -157,8 +157,10 @@ code is stable. This avoids wasting a review round on code about to change.
 
 Push branch → open/update GitHub PR (`gh pr create`/`edit`, description per
 `pr-description-style` skill, kept current) → `kanban block --kind needs_input`
-→ **STOP** (human gate) → human approves on PR → T2 merges (`gh pr merge`, proper
-message per `pr-description-style`) → verify tests → delete branch + worktree →
+→ **STOP** (human gate) → human approves on PR → T2 sets auto-merge (`gh pr merge
+--auto`, proper message per `pr-description-style`) → **keeps polling until merged**
+(`gh pr view --json state,mergeCommit,mergedAt` until `state=MERGED`; CI fail → fix +
+re-set auto-merge) → verify tests → delete branch + worktree →
 `kanban complete` + `reclaim` → self-terminate (`tmux kill-session`).
 
 ## Auth fallback

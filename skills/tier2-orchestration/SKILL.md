@@ -482,18 +482,19 @@ watch a local worktree.
    `python3 ~/.hermes/scripts/kanban-review.py <task_id> --revert --reason "..."`,
    fix, re-review. Do NOT merge before the
    block clears AND the PR shows approval.
-6. **On human approval (block cleared), YOU (Tier-2) perform the merge** — the
-   human approves, the supervisor merges (do not wait for the human to click
-   merge). `gh pr merge` per repo convention (`github-pr-workflow` —
-   squash/rebase/ff as the base requires), with a **proper merge commit message**:
-   a clean, definitive summary of what the PR delivers, written per the
-   `pr-description-style` skill (collaborator-facing, problem + before/after; NO
-   internal review/iteration/agent-process narrative). Do not let `gh`
-   auto-generate a noisy default — supply the message. Then verify tests on the
-   merged result, and delete the branch (remote + local) + remove the worktree
-   (delete-on-merge). On changes-requested/reject → address feedback (Phase 2),
-   push (PR + description update), re-request approval (re-block); discard only on
-   explicit typed confirmation.
+6. **On human approval (block cleared), set auto-merge and verify it completes.**
+   The human approves; you enable auto-merge so GitHub merges once CI passes —
+   `gh pr merge --auto` per repo convention (`github-pr-workflow` — squash/rebase/ff
+   as the base requires), with a **proper merge commit message** (clean, definitive,
+   collaborator-facing, problem + before/after; NO internal narrative — per
+   `pr-description-style`; supply the message, don't let `gh` auto-generate). Do NOT
+   wait for the human to click merge. Then **keep polling until it actually merges**:
+   auto-merge means GitHub merges when CI passes, so poll
+   `gh pr view <N> --json state,mergeCommit,mergedAt` until `state=MERGED` (and
+   `gh pr checks <N>` for the CI status). If CI fails, the auto-merge won't fire —
+   address the failure (Phase 2/3), push, re-verify approval, re-set auto-merge. If
+   the repo has auto-merge disabled, `gh pr merge --auto` errors — fall back to a
+   direct `gh pr merge` (same message) and poll for the merge to land.
 
 ### Phase 5 — Cleanup
 1. Mark the task done. The task is in `review` (Phase 4 moved it there for the
