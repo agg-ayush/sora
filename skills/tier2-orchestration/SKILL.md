@@ -95,9 +95,13 @@ Hermes is running.
    kanban comment, proceed. Escalate only if BOTH engines down.
    - **Stall handling:** `stalled` = pane shows NO activity indicator AND no status
      change (a thinking/working session is NOT stalled). On a genuinely stalled
-     claude session: `interrupt` (Esc) once → `wait`; if still stalled, `diagnose`
-     (captures pane+log for root-causing) then `stop` → fall back to codex. Codex
-     ignores `--effort`.
+     claude session: first check `doom_loop` in the status/wait output — if
+     `doom_loop: true`, the session is in a tool-call loop (same tool + same
+     normalized args 3+ times) — do NOT steer or wait again, ESCALATE
+     immediately (report the loop fingerprint and stop the session). If
+     `doom_loop` is false, `interrupt` (Esc) once → `wait`; if still stalled,
+     `diagnose` (captures pane+log for root-causing) then `stop` → fall back
+     to codex. Codex ignores `--effort`.
 8. **Never `sleep`-and-peek to wait on a spawned session. Use `claude_orchestrate
    wait`.** It blocks event-driven and returns the instant the session leaves
    `working` — no fixed-interval `sleep` + `capture-pane` loop. (For non-session
@@ -295,6 +299,13 @@ Repeat until all units done or a stop condition fires:
    narrating past/fixed behavior. Docstrings: only what's necessary — what it does
    + non-obvious caller contract; no design-rationale or 'why' narration the code
    already shows. Prefer no comment over a noisy one." (points at files, not pasted text).
+   **Prepend auto-promoted error rules.** Before composing the prompt, run
+   `python3 ~/.hermes/scripts/error-journal.py inject claude` (or `inject codex`
+   when falling back) and prepend the returned markdown block to the prompt.
+   It lists recurring T3 failure patterns auto-promoted from the error journal
+   (threshold: `TIER_ERROR_PROMOTE_THRESHOLD`, default 3). Empty output = no
+   active rules; skip silently. This is cheap insurance against re-tripping
+   known failure modes.
    - `task_id` for the plugin is the tmux session name (e.g. `t2-<TASK_ID>-u3`).
      Keep it lowercase. The kanban task_id is separate and used for claim/comment/
      heartbeat/complete calls.
@@ -338,12 +349,16 @@ Repeat until all units done or a stop condition fires:
        outcome → the agent likely crashed: go to the fallback below.
    - `state=needs_input` → the agent is asking something; read the pane, `steer`
      the answer, `wait` again.
-   - `state=stalled` → `steer` once ("report current status"); if it's a **claude**
-     session wedged in a think-loop, `interrupt` (Esc) instead of/after the steer;
-     `wait` again; if still `stalled`, `diagnose` (capture pane+log), `stop`, treat
-     as a failed run → fallback below. (Stall = no activity indicator in the pane
-     AND no status change — a session showing a thinking/working spinner is NOT
-     stalled.)
+   - `state=stalled` → check `doom_loop` in the status/wait output FIRST: if
+     `doom_loop: true`, the session is in a tool-call loop (same tool + same
+     normalized args 3+ times) — do NOT steer or wait again, ESCALATE
+     immediately (report the loop fingerprint and stop the session). If
+     `doom_loop` is false, steer once ("report current status"); if it's a
+     **claude** session wedged in a think-loop, `interrupt` (Esc) instead
+     of/after the steer; `wait` again; if still `stalled`, `diagnose`
+     (capture pane+log), `stop`, treat as a failed run → fallback below.
+     (Stall = no activity indicator in the pane AND no status change — a
+     session showing a thinking/working spinner is NOT stalled.)
    - **Fallback on failed/crashed/stalled claude run**: retry the SAME unit ONCE
      with `executor=codex`. The kanban claim stays held (no need to
      release/re-claim — the claim is separate from the executor). If codex also
@@ -364,8 +379,10 @@ stable. This avoids wasting a review round on code about to change.
 
 **3.1 impl-complete.** `claude_orchestrate gate task_id=<..>` → reads `impl`
 verdict. If `impl:fail` (no `complete` / empty diff) → steer the session with a
-reflection prompt once (see below), re-gate once; if still failing, back to
-Phase 2.
+reflection prompt once (see below), re-gate once; if still failing, **record
+the failure to the error journal** (see "Error journal wiring" below) with
+`error_type=impl_incomplete` and `signal_trace` = the gate's fail reason, then
+back to Phase 2.
 
 **3.2 tests + narrow-fix** (this skill fills the gate `tests` slot):
 1. **Baseline first.** Before running the agent's tests, capture the pre-existing
@@ -408,7 +425,9 @@ Phase 2.
    worktree to `BEFORE_SHA` (undoing the overreach); treat tests as `fail` this
    round. This is the fence, enforced in code — never trust the fixer's word or
    your own read of the diff.
-5. Re-run the suite YOURSELF. Max 3 fix loops. Still failing → ESCALATE.
+5. Re-run the suite YOURSELF. Max 3 fix loops. Still failing → **record
+   `error_type=test_failure`** with `signal_trace` = the failing test names +
+   first error line, then ESCALATE.
 
 **3.3 code review** (this skill fills the gate `review` slot) — primary path via
 the `pr-review-toolkit` `/pr-review-toolkit:review-pr` command in a **Claude Code
@@ -438,7 +457,9 @@ session** (not the implementer session):
    structured feedback appended to its brief; then re-run the review (primary or
    fallback, whichever this run used). **HARD
    LIMIT: at most 3 review→fix rounds** (count them). If still not clean after
-   the 3rd review → STOP and ESCALATE to a human with the outstanding findings; do not
+   the 3rd review → **record `error_type=review_needs_fixes`** with
+   `signal_trace` = the outstanding CRITICAL/HIGH findings summary, then STOP
+   and ESCALATE to a human with the outstanding findings; do not
    start a 4th round. Do not open one fix session per finding.
 4. A finding that conflicts with the plan text → ESCALATE (human decides which governs).
 5. **Fallback when claude auth is down** (preflight probe fails):
@@ -552,6 +573,47 @@ scope.)
 - A review finding conflicts with plan text (human decides which governs).
 - The gate cannot pass after retries.
 - Always, for the merge decision.
+
+## Error journal wiring (auto-promoted lessons)
+
+The error journal at `~/.hermes/scripts/error-journal.py` captures recurring
+T3 gate failures and auto-promotes them to candidate rules that get prepended
+to future coding-session prompts.
+
+- **Journal:** `~/.hermes/tier_orchestrator/error_journal.jsonl` (append-only).
+- **Candidate rules:** `~/.hermes/tier_orchestrator/auto_skills/<error_type>.md`
+  — each marked `[auto-promoted, needs-review]` at the top. They are NOT loaded
+  as Hermes skills; a human reviews and (optionally) promotes them by hand.
+- **Threshold:** 3 occurrences of the same `error_type` triggers promotion.
+  Override via `TIER_ERROR_PROMOTE_THRESHOLD` env var.
+
+**Record on gate failure.** When any gate check fails (impl, tests, review),
+call:
+```bash
+python3 ~/.hermes/scripts/error-journal.py record \
+  <task_id> <agent_type> <error_type> \
+  "<signal_trace — what specifically was misread>" \
+  "<what_should_have_happened>" \
+  ["<prompt_snippet — optional short excerpt>"]
+```
+Use `agent_type` = the executor that produced the failure (`claude`, `codex`,
+or `kimi-k3` for a delegate_task fixer). `error_type` is a short snake_case
+slug (e.g. `impl_incomplete`, `test_failure`, `review_needs_fixes`,
+`auth_expired`, `context_overflow`, `stuck_loop`). Keep `signal_trace` specific
+— not "tests failed" but "test_foo.py::test_bar AssertionError: expected 3
+got 4".
+
+**Inject on T3 spawn.** Before composing every Phase-2 coding-session prompt
+(and every Phase-3.3 review-fix prompt), run:
+```bash
+python3 ~/.hermes/scripts/error-journal.py inject <agent_type>
+```
+Prepend the returned markdown block to the prompt. Empty output = no active
+rules for that agent; skip silently.
+
+**Inspect / force-promote.** `patterns` shows what's near/over threshold;
+`promote` rewrites the candidate files (idempotent — run after a batch of
+records to refresh counts).
 
 ## Pitfalls
 - Pasting accumulated history or the design-doc body into dispatch prompts → use
