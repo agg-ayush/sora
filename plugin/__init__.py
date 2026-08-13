@@ -21,6 +21,76 @@ WORKTREES_DIRNAME = ".orchestrate-worktrees"
 SUBPROCESS_TIMEOUT = 15
 STALL_SECONDS = 300
 
+# ---------------------------------------------------------------------------
+# Doom-loop circuit breaker (borrowed from sentinel/conductor/self_heal.py)
+# ---------------------------------------------------------------------------
+# Per-task ring of the last N tool-call fingerprints. When the last
+# DOOM_THRESHOLD fingerprints are identical, the session is in a doom loop.
+# A tripped fingerprint is also stored globally so the same (tool, args)
+# pattern blocks across sessions for BREAKER_COOLDOWN_S.
+
+DOOM_THRESHOLD = 3
+DOOM_RING_SIZE = 6
+BREAKER_COOLDOWN_S = 300
+
+# In-memory state — resets on plugin reload, which is fine given the short
+# cooldown.  The breaker state is intentionally NOT persisted to disk.
+_doom_rings: dict[str, list[str]] = {}
+_breakers: dict[str, float] = {}  # key -> trip timestamp (epoch seconds)
+
+
+def _now_ts() -> float:
+    return time.time()
+
+
+def doom_fingerprint(tool: str, args: Any) -> str:
+    """sha1 of tool name + normalized args (whitespace collapsed, lower-cased)."""
+    norm = re.sub(r"\s+", " ", str(args)).strip().lower()[:200]
+    return hashlib.sha1(f"{tool}|{norm}".encode()).hexdigest()[:12]
+
+
+def _breaker_open(key: str) -> bool:
+    ts = _breakers.get(key)
+    if ts is None:
+        return False
+    return (_now_ts() - ts) < BREAKER_COOLDOWN_S
+
+
+def _trip_breaker(key: str) -> None:
+    _breakers[key] = _now_ts()
+    # Keep the dict bounded.
+    if len(_breakers) > 100:
+        for k in sorted(_breakers, key=lambda k: _breakers[k])[: len(_breakers) - 100]:
+            _breakers.pop(k, None)
+
+
+def observe_action(task_id: str, tool: str, args: Any) -> bool:
+    """Record a tool call; return True if this is a doom loop (trip the breaker)."""
+    fp = doom_fingerprint(tool, args)
+    seq = _doom_rings.get(task_id, [])
+    seq.append(fp)
+    seq = seq[-DOOM_RING_SIZE:]
+    _doom_rings[task_id] = seq
+    if len(seq) >= DOOM_THRESHOLD and seq[-DOOM_THRESHOLD:].count(fp) >= DOOM_THRESHOLD:
+        _trip_breaker(f"doom:{fp}")
+        _trip_breaker(f"task:{task_id}")
+        return True
+    return False
+
+
+def clear_doom_task(task_id: str) -> None:
+    _doom_rings.pop(task_id, None)
+
+
+def doom_loop_active(task_id: str) -> bool:
+    """True if the task's own breaker is open (doom loop detected recently)."""
+    return _breaker_open(f"task:{task_id}")
+
+
+def breaker_open_for(tool: str, args: Any) -> bool:
+    """True if the exact (tool, args) fingerprint is globally blocked."""
+    return _breaker_open(f"doom:{doom_fingerprint(tool, args)}")
+
 def _tasks_root() -> Path:
     return get_hermes_home() / "tasks"
 
@@ -388,6 +458,7 @@ def _session_state(task_id: str, tail: int = 60, stall_seconds: int = STALL_SECO
             "status_file": status_file,
             "result": _read_text(artifact_dir / "result.md"),
             "outcome": _read_outcome(task_id)["outcome"],
+            "doom_loop": doom_loop_active(task_id),
         }
 
     capture = _run(["tmux", "capture-pane", "-t", task_id, "-p", "-S", f"-{tail}"])
@@ -409,11 +480,12 @@ def _session_state(task_id: str, tail: int = 60, stall_seconds: int = STALL_SECO
     now = time.time()
     last_change_ts = _record_activity(task_id, status_file, now)
     seconds_since_change = now - last_change_ts
+    doom_loop = doom_loop_active(task_id)
     stalled = (
         not done
         and not waiting_for_input
         and not actively_working
-        and seconds_since_change >= stall_seconds
+        and (seconds_since_change >= stall_seconds or doom_loop)
     )
 
     if done:
@@ -434,6 +506,7 @@ def _session_state(task_id: str, tail: int = 60, stall_seconds: int = STALL_SECO
         "waiting_for_input": waiting_for_input,
         "done": done,
         "seconds_since_change": seconds_since_change,
+        "doom_loop": doom_loop,
         "outcome": _read_outcome(task_id)["outcome"],
     }
 
@@ -826,6 +899,7 @@ def _gate(args: dict) -> dict:
         "review": review,
         "tests": tests,
         "passed": passed,
+        "doom_loop": doom_loop_active(task_id),
     }
 
 
@@ -867,15 +941,16 @@ def _handle(args: dict, **kw) -> str:
 CLAUDE_ORCHESTRATE_SCHEMA = {
     "name": "claude_orchestrate",
     "description": (
-        "Drive interactive Claude Code sessions inside tmux: start a session, poll its status/pane output "
-        "(status/wait report state as working/needs_input/stalled/done/exited; stalled means no pane or status.md "
-        "change for stall_seconds), block until it needs input, stalls, or exits (wait), steer it with follow-up "
-        "input, fetch its result, or stop it. "
-        "gate runs the exit-gate verdict (impl-complete check plus caller-supplied review/tests verdicts, "
-        "defaulting to skipped stubs if omitted). "
-        "clean deletes a dead task's artifact dir (and optionally its worktree). "
-        "check_diff computes changed paths since base_sha (committed + working tree + untracked) and "
-        "checks them against a glob allowlist, optionally hard-resetting the worktree on violation."
+    "Drive interactive Claude Code sessions inside tmux: start a session, poll its status/pane output "
+    "(status/wait report state as working/needs_input/stalled/done/exited; stalled means no pane or status.md "
+    "change for stall_seconds, or a doom-loop breaker tripped), block until it needs input, stalls, or exits "
+    "(wait), steer it with follow-up "
+    "input, fetch its result, or stop it. "
+    "gate runs the exit-gate verdict (impl-complete check plus caller-supplied review/tests verdicts, "
+    "defaulting to skipped stubs if omitted) and also reports doom_loop. "
+    "clean deletes a dead task's artifact dir (and optionally its worktree). "
+    "check_diff computes changed paths since base_sha (committed + working tree + untracked) and "
+    "checks them against a glob allowlist, optionally hard-resetting the worktree on violation."
     ),
     "parameters": {
         "type": "object",
