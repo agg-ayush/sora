@@ -162,6 +162,22 @@ def _start(args: dict) -> dict:
             exec_cmd += f" --model {shlex.quote(model)}"
         if effort:
             exec_cmd += f" --effort {shlex.quote(effort)}"
+        # Deny-guard hook: structurally block git push / gh pr create/merge /
+        # secret reads / destructive commands in the T3 session. The merge gate
+        # is the broker — the agent edits+commits, never pushes/merges. Write a
+        # per-session settings.json with the hook and pass it via --settings.
+        deny_settings = artifact_dir / "deny-settings.json"
+        deny_settings.write_text(json.dumps({
+            "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": str(_deny_guard_path())}]}]}
+        }), encoding="utf-8")
+        exec_cmd += f" --settings {shlex.quote(str(deny_settings))}"
+        # Secret-scrub: pop credentials from the child env so a Bash-equipped
+        # agent can't exfiltrate them (the broker holds the secrets and pushes
+        # on the agent's behalf). NOTE: do NOT scrub FIREWORKS_API_KEY — the
+        # fireworks path needs it (exported as ANTHROPIC_AUTH_TOKEN).
+        env_scrub = " ".join(
+            f"unset {k}" for k in ("GITHUB_TOKEN", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "TFY_API_KEY", "TRUEFOUNDRY_API_KEY")
+        )
         if model_provider == "fireworks":
             # Route this session to Kimi K3 on Fireworks' Anthropic-compatible
             # endpoint. CLAUDE_CONFIG_DIR isolates the session from the personal
@@ -207,12 +223,14 @@ def _start(args: dict) -> dict:
             )
             shell_cmd = (
                 f"cd {shlex.quote(Path(rundir).as_posix())} && "
+                f"{env_scrub} && "
                 f"{k3_exports}"
                 f"{exec_cmd} {shlex.quote(full_prompt)}"
             )
         else:
             shell_cmd = (
                 f"cd {shlex.quote(Path(rundir).as_posix())} && "
+                f"{env_scrub} && "
                 # ambient ANTHROPIC_API_KEY breaks the TrueFoundry gateway claude uses
                 "unset ANTHROPIC_API_KEY ANTHROPIC_API_KEY_BACKUP BACKUP_ANTHROPIC_API_KEY && "
                 f"{exec_cmd} {shlex.quote(full_prompt)}"
@@ -348,6 +366,11 @@ def _read_outcome(task_id: str) -> dict:
     if parsed["outcome"] is not None:
         return parsed
     return stray_parsed
+
+
+def _deny_guard_path() -> Path:
+    """Path to the deny-guard hook script (blocks git push / gh pr / secrets in T3 sessions)."""
+    return get_hermes_home() / "scripts" / "deny-guard.sh"
 
 
 def _session_state(task_id: str, tail: int = 60, stall_seconds: int = STALL_SECONDS) -> dict:
