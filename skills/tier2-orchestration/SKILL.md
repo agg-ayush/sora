@@ -115,7 +115,14 @@ Hermes is running.
     the VERDICT file, never the design-doc body, into your own context. Author and
     reviewer MUST be different model families — never let the author review its own
     doc.
-11. **Design-review rounds capped at 3.** After the 3rd review, if still not
+11. **Reflexion one-shot on gate failure.** When a gate check fails (impl/test/
+    review), don't kill the session and start fresh — steer the existing session
+    with a reflection prompt: "PRIOR ATTEMPT FAILED. The failing signal was: <the
+    gate output>. Reflect in one sentence on WHY it failed and what to change,
+    then produce a corrected attempt. Do not repeat the same approach." Then
+    re-gate ONCE. If still failing, escalate. Bounded — not a loop. (Borrowed from
+    sentinel's self_heal.py — the Reflexion one-shot pattern.)
+12. **Design-review rounds capped at 3.** After the 3rd review, if still not
     approved → STOP and ESCALATE with the latest doc + outstanding blocking issues.
     Do NOT start a 4th round. A blocking issue that reflects genuine ambiguity in
     the TASK itself (not the doc) → ESCALATE for clarification, don't spin another
@@ -189,8 +196,12 @@ target repo to ground the design; it does not write to it.
    Prompt (verbatim shape): "Read `<task-file>` (and read the target repo at
    `<repo-path>` as needed) and write a design doc to `<out-path>`: problem
    statement; chosen approach (pick ONE, justify vs alternatives);
-   file/component-level plan; interfaces/contracts; build sequence; risks. Then
-   set status complete and write DONE to your outcome file."
+   file/component-level plan; interfaces/contracts; build sequence; risks. **Also
+   include:** a failure-mode analysis (for each critical flow: partial/gray/
+   asymmetric failures, dependency latency spikes, what happens when a dependency
+   is slow but not down) and a rollback strategy (reversible migrations, data loss
+   on rollback, kill switches, forward/backward compat). Then set status complete
+   and write DONE to your outcome file."
 4. `claude_orchestrate wait` for the session; on `done`/`DONE` the doc exists at
    `<out-path>`. Do NOT read the doc content into your context — you only need
    its path for the reviewer. **The claim TTL is 900s and `wait` blocks your event
@@ -352,10 +363,18 @@ tests surface a failure, address that first and re-run both once the code is
 stable. This avoids wasting a review round on code about to change.
 
 **3.1 impl-complete.** `claude_orchestrate gate task_id=<..>` → reads `impl`
-verdict. If `impl:fail` (no `complete` / empty diff) → back to Phase 2.
+verdict. If `impl:fail` (no `complete` / empty diff) → steer the session with a
+reflection prompt once (see below), re-gate once; if still failing, back to
+Phase 2.
 
 **3.2 tests + narrow-fix** (this skill fills the gate `tests` slot):
-1. Run the project's test suite YOURSELF via terminal in `<rundir>`. Read the real
+1. **Baseline first.** Before running the agent's tests, capture the pre-existing
+   failures: run the suite on the base commit (`git stash` or `git worktree` the
+   base) and record which tests fail. The agent's tests should block only on NEW
+   failures — a repo with pre-existing red tests shouldn't block a fix. If the
+   agent's changes introduce a new failure, that's a gate failure. If they fail
+   only on tests that were already red, that's not a gate failure (note it).
+2. Run the project's test suite YOURSELF via terminal in `<rundir>`. Read the real
    exit code + output. Pass → review (3.3).
    - **Run EVERY test suite the diff touches, not just the primary component's.**
      A monorepo often has multiple independent suites (e.g. a component's own
@@ -372,14 +391,14 @@ verdict. If `impl:fail` (no `complete` / empty diff) → back to Phase 2.
    - **If the repo has CI, verify it green before declaring the gate passed:**
      after pushing, `gh pr checks <pr>` must show all checks passing; a red CI
      check is a gate failure even if your local run was green.
-2. On failure, capture `BEFORE_SHA = git rev-parse HEAD` in the worktree, then
+3. On failure, capture `BEFORE_SHA = git rev-parse HEAD` in the worktree, then
    `delegate_task` a test-fixer (kimi-k3). Its goal:
    run the suite and fix ONLY small mechanical failures (missing dependency,
    trivial config/env). Constraint in its context, verbatim: "Do NOT modify
    implementation source. You may edit ONLY dependency/config/env files
    (lockfiles, requirements.txt/pyproject/package.json, .env, CI/config). If a
    failure needs a production-code change, STOP and report it — do not fix it."
-3. **ENFORCE the allowlist deterministically via the `check_diff` action (do NOT
+4. **ENFORCE the allowlist deterministically via the `check_diff` action (do NOT
    eyeball the diff yourself).** After the fixer returns, call
    `claude_orchestrate check_diff` with `task_id`, `base_sha=<BEFORE_SHA>`,
    `allowlist=<dep/config/env globs>` (e.g. `["*.lock","requirements*.txt",
@@ -389,7 +408,7 @@ verdict. If `impl:fail` (no `complete` / empty diff) → back to Phase 2.
    worktree to `BEFORE_SHA` (undoing the overreach); treat tests as `fail` this
    round. This is the fence, enforced in code — never trust the fixer's word or
    your own read of the diff.
-4. Re-run the suite YOURSELF. Max 3 fix loops. Still failing → ESCALATE.
+5. Re-run the suite YOURSELF. Max 3 fix loops. Still failing → ESCALATE.
 
 **3.3 code review** (this skill fills the gate `review` slot) — primary path via
 the `pr-review-toolkit` `/pr-review-toolkit:review-pr` command in a **Claude Code
@@ -397,16 +416,17 @@ session** (not the implementer session):
 1. `claude_orchestrate start` a Claude Code session (`executor=claude`,
    `model_provider=fireworks` — Kimi K3) in the
    task's worktree (`workdir=<rundir>`). Prompt it to run the pr-review-toolkit
-   review over this unit's changes and write a structured verdict to an
-   out-of-repo file, e.g.: "Run `/pr-review-toolkit:review-pr` on the changes in
-   this worktree (diff base <base_sha>..HEAD) against <brief-file>. Include the
-   state-transition-reviewer if the diff introduces stateful behavior (latches,
-   refs, machine context, admission gates, persistence, restore/seed paths) —
-   it enumerates state transitions and probes failure-then-retry, reset-coverage,
-   mid-flight-config-change, and dual-writer-desync paths. Then write your
-   verdict to <verdict-path> as: `spec: pass|fail`, `quality: approved|needs_fixes`,
-   `confidence: <0-100>`, `findings: [...]`, plus `state_transitions: clean|needs_fixes`
-   if the stateful reviewer fired. Set status complete + write DONE to
+   the review over this unit's changes and write a structured verdict to an
+   out-of-repo file. The review should specifically probe: (a) resource-lifecycle
+   bugs (a resource opened but not closed on every path, an external call made
+   without a timeout, a subprocess not reaped); (b) missing retry/backoff on
+   transient external failures (network, S3, the gateway); (c) false-success
+   swallowed errors (a catch that logs but continues, a return-code ignored);
+   (d) check-then-act without atomicity (a `if not exists: create` that races,
+   a read-modify-write without a lock). Then write your verdict to <verdict-path>
+   as: `spec: pass|fail`, `quality: approved|needs_fixes`, `confidence: <0-100>`,
+   `findings: [...]`, plus `state_transitions: clean|needs_fixes` if the
+   state-transition-reviewer fired. Set status complete + write DONE to
    your outcome file." Launch with `effort=medium` (high effort is the main claude
    hang trigger; a structured-verdict review doesn't need it). Do NOT pass `model`
    in the fireworks path (K3 is set via env).
