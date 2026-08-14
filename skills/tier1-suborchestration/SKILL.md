@@ -203,6 +203,28 @@ merged, YOU close the task:
   task) before exiting — the norm is it exits in `review`, so expect to close it
   yourself.
 
+## Diagnosing a stuck task (board-side, no tmux needed)
+
+Before reaching for `tmux capture-pane`, read the board's own history — it
+survives the session dying:
+
+- `hermes kanban runs <task_id> --board <slug>` — every worker attempt on the
+  task with its outcome. Tells you whether this is attempt 1 or attempt 4.
+- `hermes kanban log <task_id> --board <slug>` — the event stream
+  (claimed/heartbeat/blocked/review_requested/…). Shows where it stalled.
+- `hermes kanban context <task_id> --board <slug>` — the worker-facing brief,
+  i.e. exactly what the T2 was told.
+
+Use these first when a task looks stuck; drop to the pane only when you need the
+agent's live output.
+
+## Emergency stop
+
+`hermes pause --reason "<why>"` halts NEW work only — cron dispatch, kanban
+dispatch, and new gateway turns — while in-flight sessions finish. `hermes
+resume` clears it. Prefer this over killing tmux sessions when you need the line
+stopped (killing loses in-flight work; pause doesn't).
+
 ## Pitfalls
 - Gold-plating a trivial build task with a needs-design flag → triage honestly.
 - Handing Tier 2 your triage chatter → T2 gets the task body + the needs-design

@@ -9,7 +9,7 @@ and config templates for the multi-tier autonomous coding pipeline.
 plugin/     claude-orchestrate plugin (pure tmux session manager)
 plugins/    pr-review-toolkit patches (state-transition-reviewer specialist)
 skills/     tier1-suborchestration + tier2-orchestration skills
-scripts/    orphan-reaper.py (self-healing watchdog) + error-journal.py (failure capture) + watch_ci_main.py (CI watcher) + deny-guard.sh (T3 hook)
+scripts/    orphan-reaper.py (self-healing watchdog) + hermes-hygiene.py (weekly storage/health) + error-journal.py (failure capture) + watch_ci_main.py (CI watcher) + deny-guard.sh (T3 hook)
 docs/       hermes-tiers-reference.md (canonical architecture) + audit.md
 config/     config.yaml.template, env.template, zshrc-snippet.sh (NO secrets)
 ```
