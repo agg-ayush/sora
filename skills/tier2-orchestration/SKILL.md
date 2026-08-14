@@ -503,7 +503,7 @@ watch a local worktree.
    for the audit trail. Then **move the task to the `review` status** (PR is up,
    awaiting the human's code review):
    `hermes kanban request-review <task_id> [--board <repo>] --summary
-   "PR #N up for review"`. **STOP.** Autonomy ends here — a human decision is
+   "PR #N up for review" --force`. **STOP.** Autonomy ends here — a human decision is
    required for EVERY merge (hard rule).
    - Use `review`, NOT `blocked`, for the normal "PR is ready, please review + merge"
      case — the dashboard shows it in the Review column. Reserve `blocked`

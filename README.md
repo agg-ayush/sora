@@ -9,7 +9,7 @@ and config templates for the multi-tier autonomous coding pipeline.
 plugin/     claude-orchestrate plugin (pure tmux session manager)
 plugins/    pr-review-toolkit patches (state-transition-reviewer specialist)
 skills/     tier1-suborchestration + tier2-orchestration skills
-scripts/    kanban-review.py (status transitions) + orphan-reaper.py (self-healing watchdog)
+scripts/    orphan-reaper.py (self-healing watchdog) + error-journal.py (failure capture) + watch_ci_main.py (CI watcher) + deny-guard.sh (T3 hook)
 docs/       hermes-tiers-reference.md (canonical architecture) + audit.md
 config/     config.yaml.template, env.template, zshrc-snippet.sh (NO secrets)
 ```
@@ -36,7 +36,6 @@ ln -sf ~/hermes-tier-setup/skills/tier2-orchestration ~/.hermes/skills/autonomou
 
 # 3. Scripts → symlink into Hermes scripts
 mkdir -p ~/.hermes/scripts
-ln -sf ~/hermes-tier-setup/scripts/kanban-review.py ~/.hermes/scripts/
 ln -sf ~/hermes-tier-setup/scripts/orphan-reaper.py ~/.hermes/scripts/
 
 # 4. Config — copy templates and fill in

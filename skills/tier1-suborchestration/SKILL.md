@@ -196,24 +196,12 @@ merged, YOU close the task:
 
 - **First verify the merge on GitHub, not the kanban board** — `gh pr view <N>
   --json state,mergeCommit`. The board is bookkeeping; the merge is the fact.
-- **`hermes kanban complete <task_id>` is BROKEN from the `review` state** — it
-  returns "unknown id or terminal state" even when the task exists and all runs
-  are closed (reproduced: the trigger is the `review` status itself, not a stale
-  run lock). `promote` only works from todo/blocked, `unblock` only from
-  blocked, `reclaim` only from running. There is no clean `kanban` CLI path out
-  of `review`.
-- **Workaround — use the transition helper** (the same one the T2 skill's Phase
-  5 uses), NOT raw SQL:
-  ```
-  python3 ~/.hermes/scripts/kanban-review.py <task_id> --board <slug> --to done \
-    --result "merged via PR #N"
-  ```
-  It handles review→done (and running→done). This is the sanctioned close path;
-  `complete` should be fixed in Hermes to accept `review`, but until it is, use
-  the helper.
+- **Close the task** — `hermes kanban complete <task_id> --board <slug> --result
+  "merged via PR #N"`. The upstream's review lifecycle is first-class —
+  `complete` accepts review-state tasks.
 - Prevention: tell T2 in the handoff brief to run its Phase 5 cleanup (close the
-  task via the helper) before exiting — the norm is it exits in `review`, so
-  expect to close it yourself via the helper.
+  task) before exiting — the norm is it exits in `review`, so expect to close it
+  yourself.
 
 ## Pitfalls
 - Gold-plating a trivial build task with a needs-design flag → triage honestly.

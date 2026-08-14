@@ -998,7 +998,7 @@ CLAUDE_ORCHESTRATE_SCHEMA = {
             },
             "effort": {
                 "type": "string",
-                "enum": ["low", "medium", "high", "max", "auto"],
+                "enum": ["low", "medium", "high", "xhigh", "max"],
                 "description": "Reasoning effort for the claude executor (start; --effort). Omit for the CLI default.",
             },
             "tail": {"type": "integer", "description": "Lines of pane output to return (status/wait, default 60)"},
