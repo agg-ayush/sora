@@ -30,3 +30,39 @@ display:
 # that crash, re-dispatches). Leave it off.
 kanban:
   auto_decompose: false
+
+# --- Optional tier-orchestration additions (uncomment + adjust) --------------
+
+# Auxiliary model pinning — route cheap background tasks to claude-haiku-4-5 via
+# the TrueFoundry gateway instead of burning the default (kimi-k3) model on them.
+#auxiliary:
+#  compression:
+#    model: claude-group/claude-haiku-4-5
+#    provider: truefoundry
+#  title_generation:
+#    model: claude-group/claude-haiku-4-5
+#    provider: truefoundry
+#  curator:
+#    model: claude-group/claude-haiku-4-5
+#    provider: truefoundry
+#  goal_judge:
+#    model: claude-group/claude-haiku-4-5
+#    provider: truefoundry
+#  memory_query_rewrite:
+#    model: claude-group/claude-haiku-4-5
+#    provider: truefoundry
+
+# Compression knobs — proactive pruning + idle auto-compact so long tier
+# sessions don't hit the context wall.
+#compression:
+#  enabled: true
+#  proactive_prune_tokens: 48000        # prune tool output early, before threshold
+#  idle_compact_after_seconds: 1800     # auto-compact after 30min idle
+
+# Hooks — subagent_stop fires after every delegate_task child finishes; the
+# ledger hook appends the outcome to ~/.hermes/tier_orchestrator/subagent_ledger.jsonl.
+# Script lives at scripts/subagent-ledger-hook.py in this repo.
+#hooks:
+#  subagent_stop:
+#    - command: ~/.hermes/scripts/subagent-ledger-hook.py
+#      timeout: 5
