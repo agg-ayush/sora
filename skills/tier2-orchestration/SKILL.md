@@ -545,10 +545,8 @@ watch a local worktree.
 
 ### Phase 5 — Cleanup
 1. Mark the task done. The task is in `review` (Phase 4 moved it there for the
-   merge gate), and `hermes kanban complete` now accepts review-state tasks
-   (the upstream's review lifecycle is first-class). Use:
+   merge gate), and `hermes kanban complete` accepts review-state tasks. Use:
    `hermes kanban complete <task_id> --result "merged via PR #N"`.
-   (The old `kanban-review.py` helper is deprecated — the native verbs work.)
 2. `hermes kanban reclaim <task_id>` — release the claim (do this BEFORE
    self-terminating so the claim doesn't linger until TTL expiry).
 3. Prune the task artifact dir (avoid unbounded growth). Only remove worktrees
