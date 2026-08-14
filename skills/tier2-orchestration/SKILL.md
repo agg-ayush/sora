@@ -502,7 +502,7 @@ watch a local worktree.
 4. Link the PR back to the kanban task: `hermes kanban comment <task_id> "PR: <url>"`
    for the audit trail. Then **move the task to the `review` status** (PR is up,
    awaiting the human's code review):
-   `python3 ~/.hermes/scripts/kanban-review.py <task_id> [--board <repo>] --reason
+   `hermes kanban request-review <task_id> [--board <repo>] --summary
    "PR #N up for review"`. **STOP.** Autonomy ends here — a human decision is
    required for EVERY merge (hard rule).
    - Use `review`, NOT `blocked`, for the normal "PR is ready, please review + merge"
@@ -526,7 +526,7 @@ watch a local worktree.
    `hermes kanban show <task_id> --json` (watch the status) and
    `gh pr view --json state,reviewDecision,mergedAt`. If the reviewer sends the PR
    back for changes, move it back to running:
-   `python3 ~/.hermes/scripts/kanban-review.py <task_id> --revert --reason "..."`,
+   `hermes kanban reopen-review <task_id> --reason "..."`,
    fix, re-review. Do NOT merge before the
    block clears AND the PR shows approval.
 6. **On human approval (block cleared), set auto-merge and verify it completes.**
@@ -545,10 +545,10 @@ watch a local worktree.
 
 ### Phase 5 — Cleanup
 1. Mark the task done. The task is in `review` (Phase 4 moved it there for the
-   merge gate), and `hermes kanban complete` REFUSES a review-state task (it only
-   accepts running|ready). Use the transition helper instead:
-   `python3 ~/.hermes/scripts/kanban-review.py <task_id> --board <slug> --to done
-   --result "merged via PR #N"`. (It also handles running→done as a fallback.)
+   merge gate), and `hermes kanban complete` now accepts review-state tasks
+   (the upstream's review lifecycle is first-class). Use:
+   `hermes kanban complete <task_id> --result "merged via PR #N"`.
+   (The old `kanban-review.py` helper is deprecated — the native verbs work.)
 2. `hermes kanban reclaim <task_id>` — release the claim (do this BEFORE
    self-terminating so the claim doesn't linger until TTL expiry).
 3. Prune the task artifact dir (avoid unbounded growth). Only remove worktrees

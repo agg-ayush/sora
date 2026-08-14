@@ -117,10 +117,10 @@ Key features:
 | Heartbeat (keep alive) | `hermes kanban heartbeat <task_id> --note <text>` | T2 |
 | Gate evidence | `hermes kanban comment <task_id> <text>` | T2 |
 | Design doc / ledger | `hermes kanban attach <task_id> <file>` | T2 |
-| Human merge gate | `python3 ~/.hermes/scripts/kanban-review.py <task_id> [--board <b>]` (running→review) | T2 (PR up for review) |
+| Human merge gate | `hermes kanban request-review <task_id> [--board <b>]` (running→review) | T2 (PR up for review) |
 | Needs-input gate | `hermes kanban block --kind needs_input <task_id> <reason>` | T2 (needs human INPUT) |
 | Human approves | `hermes kanban unblock <task_id>` | Human |
-| Complete (review→done) | `python3 ~/.hermes/scripts/kanban-review.py <task_id> --to done --result <text>` | T2 (after merge) |
+| Complete (review→done) | `hermes kanban complete <task_id> --result <text>` | T2 (after merge) |
 | Dependencies | `hermes kanban link <parent> <child>` | T2 (parallel units) |
 | Stale-claim sweep | `hermes kanban dispatch` (reclaims dead-process claims) | Gateway/cron |
 
