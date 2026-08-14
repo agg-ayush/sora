@@ -393,6 +393,11 @@ back to Phase 2.
    only on tests that were already red, that's not a gate failure (note it).
 2. Run the project's test suite YOURSELF via terminal in `<rundir>`. Read the real
    exit code + output. Pass → review (3.3).
+   - **First run `hermes verify <rundir> --phase test --save`** — it auto-detects
+     the project's build/test recipe (and persists it to `.hermes/environment.json`
+     for reuse). If verify detects the recipe correctly, use it. Fall back to the
+     repo's documented commands (its `.hermes.md` / package.json scripts) only if
+     verify's detection is wrong for this repo.
    - **Run EVERY test suite the diff touches, not just the primary component's.**
      A monorepo often has multiple independent suites (e.g. a component's own
      `tests/` AND a repo-level `.claude/scripts/tests/`), each a separate CI job.
