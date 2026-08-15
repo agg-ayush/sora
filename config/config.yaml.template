@@ -66,3 +66,10 @@ kanban:
 #  subagent_stop:
 #    - command: ~/.hermes/scripts/subagent-ledger-hook.py
 #      timeout: 5
+
+# Delegation: subagents auto-approve their tool actions (no silent auto-deny
+# stalls). Subagents can't ask for approval — without this they look "stuck"
+# when a tool needs it. Tier safeguards (deny-guard on T3, no-commit-to-main
+# hooks) still bind them.
+delegation:
+  subagent_auto_approve: true
