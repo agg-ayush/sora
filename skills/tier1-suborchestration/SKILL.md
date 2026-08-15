@@ -229,3 +229,10 @@ stopped (killing loses in-flight work; pause doesn't).
 - Gold-plating a trivial build task with a needs-design flag → triage honestly.
 - Handing Tier 2 your triage chatter → T2 gets the task body + the needs-design
   flag + the one-line triage comment. Not your reasoning prose.
+- **Tripping the terminal tool's guardrails in long sessions.** The terminal tool
+  hard-blocks: `&`-backgrounding (use `background=true` instead), foreground
+  commands that start servers/watch processes (use `background=true` + a health
+  check), and certain malformed/complex command shapes. These show up as
+  `{"error": "Foreground command uses '&' backgrounding..."}` or
+  `BLOCKED (hardline)`. When one fires, don't retry the same shape — restructure:
+  `background=true` for anything long-lived, simple commands over nested one-liners.
