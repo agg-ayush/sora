@@ -44,6 +44,24 @@ def _get(url: str, token: str, timeout: float) -> dict | list:
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _get_retry(url: str, token: str, timeout: float, attempts: int = 3):
+    """Retry transient network failures (timeouts, 5xx, connection errors) with
+    backoff. A watcher that can't reach GitHub for one tick should skip silently,
+    not alert — the next tick catches up. Returns None on persistent failure."""
+    import time as _time
+    for i in range(attempts):
+        try:
+            return _get(url, token, timeout)
+        except Exception as e:
+            # 4xx (auth/not-found) is a real error — don't retry it.
+            msg = str(e)
+            if "HTTP Error 4" in msg:
+                raise
+            if i < attempts - 1:
+                _time.sleep(2 ** i)  # 1s, 2s
+    return None
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description="Watch a repo's default-branch CI for failures.")
     p.add_argument("--name", default="", help="Watcher name (used for state file)")
@@ -89,15 +107,18 @@ def main() -> int:
                     token = line.split("=", 1)[1].strip().strip('"').strip("'")
                     break
 
-    # 1. Get the latest commit on the default branch.
+    # 1. Get the latest commit on the default branch. Transient network failure
+    # → exit 0 silently (next tick catches up); only config/auth errors hard-fail.
     try:
-        branch = _get(
+        branch = _get_retry(
             f"https://api.github.com/repos/{args.repo}/branches/{urllib.parse.quote(args.branch, safe='')}",
             token, args.timeout,
         )
     except Exception as e:
         print(f"watch_ci_main: failed to fetch branch {args.branch}: {e}", file=sys.stderr)
         return 2
+    if branch is None:
+        return 0  # persistent network failure — skip this tick silently
     sha = (branch.get("commit") or {}).get("sha")
     if not sha:
         print(f"watch_ci_main: no commit sha on branch {args.branch}", file=sys.stderr)
@@ -105,13 +126,15 @@ def main() -> int:
 
     # 2. Get the check-runs for that commit.
     try:
-        checks_raw = _get(
+        checks_raw = _get_retry(
             f"https://api.github.com/repos/{args.repo}/commits/{sha}/check-runs?per_page=100",
             token, args.timeout,
         )
     except Exception as e:
         print(f"watch_ci_main: failed to fetch check-runs for {sha[:8]}: {e}", file=sys.stderr)
         return 2
+    if checks_raw is None:
+        return 0  # persistent network failure — skip silently
 
     checks: dict = checks_raw if isinstance(checks_raw, dict) else {}
     runs = checks.get("check_runs", [])
