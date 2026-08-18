@@ -72,10 +72,16 @@ def main() -> int:
     args = p.parse_args()
 
     # Config file wins over CLI args (for cron use — the cron runs the script bare).
-    # The script reads its config from ~/.hermes/scripts/watch_ci_main.json by default
-    # (a single {name, repo, branch} JSON object) when no --config is given.
-    config_path = args.config or os.path.join(os.path.dirname(os.path.abspath(__file__)), "watch_ci_main.json")
-    if os.path.exists(config_path):
+    # Resolution order: --config, then <script_dir>/watch_ci_main.json, then
+    # ~/.hermes/scripts/watch_ci_main.json (stable fallback so any copy of the
+    # script — repo or live — finds the same config).
+    candidates = [
+        args.config,
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "watch_ci_main.json"),
+        os.path.expanduser("~/.hermes/scripts/watch_ci_main.json"),
+    ]
+    config_path = next((c for c in candidates if c and os.path.exists(c)), "")
+    if config_path:
         try:
             cfg = json.loads(Path(config_path).read_text(encoding="utf-8"))
             args.name = args.name or cfg.get("name", "")
