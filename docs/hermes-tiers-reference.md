@@ -72,14 +72,9 @@ holo 2
 | `holo dash` | `hermes dashboard` — web dashboard at localhost:9119 |
 
 Tier sessions MUST be persistent interactive tmux sessions, NOT `hermes … -q`
-(single-query exits and strands delegate_task results). **Spawn with `--cli`**
-(`hermes -s tier2-orchestration --cli`): if `display.interface: tui` is the
-default, the TUI's stdin closes (EOF) in a detached tmux pane and the parent dies
-within minutes — `--cli` forces the classic REPL, which handles detached stdin
-correctly. **Heartbeat the kanban claim during any long `claude_orchestrate wait`**
-(design-author/review waits can exceed the 900s TTL): call
-`hermes kanban heartbeat <task_id>` every ~10 min while waiting, or the claim
-expires and another T2 can double-claim.
+(single-query exits and strands delegate_task results). Exact spawn incantation
+per the `hermes-session-cli-launch` skill. Heartbeat discipline per the tier2
+skill's claim/heartbeat principle.
 
 ## The plugin — `claude-orchestrate`
 
@@ -124,8 +119,7 @@ Key features:
 | Dependencies | `hermes kanban link <parent> <child>` | T2 (parallel units) |
 | Stale-claim sweep | `hermes kanban dispatch` (reclaims dead-process claims) | Gateway/cron |
 
-**Block syntax gotcha:** `--kind needs_input` must come BEFORE the task_id (argparse
-ordering). Correct: `hermes kanban block --kind needs_input <task_id> <reason>`.
+(Block syntax gotcha: see the tier1/tier2 skills' Pitfalls sections.)
 
 ## Design principles (non-negotiable)
 
@@ -147,37 +141,25 @@ ordering). Correct: `hermes kanban block --kind needs_input <task_id> <reason>`.
 
 ## Gate order (Phase 3)
 
-Tests and review run in **PARALLEL** (kick off both simultaneously — they inspect
-the same diff independently). But if tests fail fast, cancel/ignore the review
-round rather than acting on review findings for code that's about to change. The
-fail-fast logic applies: address the test failure first, re-run both once the
-code is stable. This avoids wasting a review round on code about to change.
+Per the tier2 skill's Phase 3: tests + review run in PARALLEL; tests fail fast —
+address a fast test failure first, re-run both once the code is stable.
 
 ## Phase 4 — PR + human approval
 
-Push branch → open/update GitHub PR (`gh pr create`/`edit`, description per
-`pr-description-style` skill, kept current) → `kanban block --kind needs_input`
-→ **STOP** (human gate) → human approves on PR → T2 sets auto-merge (`gh pr merge
---auto`, proper message per `pr-description-style`) → **keeps polling until merged**
-(`gh pr view --json state,mergeCommit,mergedAt` until `state=MERGED`; CI fail → fix +
-re-set auto-merge) → verify tests → delete branch + worktree →
-`kanban complete` + `reclaim` → self-terminate (`tmux kill-session`).
+Per the tier2 skill's Phase 4: push → PR (description per `pr-description-style`)
+→ human review gate → human approves → T2 sets auto-merge and polls until merged →
+cleanup (branch/worktree, `kanban complete` + `reclaim`) → self-terminate.
 
 ## Auth fallback
 
-Claude Code auths through a gateway that occasionally times out. Before spawning a
-claude session, probe auth via the plugin — `claude_orchestrate start` with
-`model_provider=fireworks`, a trivial prompt ("reply PONG"), and a short timeout
-(see the tier2 skill's auth-fallback principle). Do NOT probe with a raw
-`claude -p` — that checks the TF/Anthropic endpoint, not the Fireworks path. If
-it fails, fall back:
-- Coding → `executor=codex`
-- T1 author/review → Codex sessions
-- **T2 code review** (`/pr-review-toolkit:review-pr`) → `requesting-code-review` skill
-  via delegate_task (kimi-k3)
+Probe + fallback routing per the tier2 skill's auth-fallback principle (probe via
+the plugin with `model_provider=fireworks`, never raw `claude -p`). The routing
+summary, in short: coding + T1 author/review → `executor=codex`; T2 code review →
+`requesting-code-review` via delegate_task (kimi-k3).
 
-**Effort:** T2 design author/reviser = `effort=high` (design is judgment-heavy, kimi-k3
-via Fireworks). T2 coding sessions = `effort=medium`. T2 code review = `effort=medium`.
+**Effort (defaults):** T2 design author/reviser = `effort=high` (design is
+judgment-heavy, kimi-k3 via Fireworks). T2 coding sessions = `effort=medium`. T2
+code review = `effort=medium`.
 A *thinking* session is not a stalled one — stall detection ignores file-staleness
 when the pane shows an activity indicator. Genuine stall (no indicator + no file
 change) → `interrupt` (Esc) once → `diagnose` → fall back to Codex.

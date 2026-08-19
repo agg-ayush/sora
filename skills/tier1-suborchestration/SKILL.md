@@ -245,6 +245,8 @@ resume` clears it. Prefer this over killing tmux sessions when you need the line
 stopped (killing loses in-flight work; pause doesn't).
 
 ## Pitfalls
+- **Block syntax gotcha (argparse ordering):** `--kind needs_input` must come
+  BEFORE the task_id — `hermes kanban block --kind needs_input <task_id> <reason>`.
 - Gold-plating a trivial build task with a needs-design flag → triage honestly.
 - Handing Tier 2 your triage chatter → T2 gets the task body + the needs-design
   flag + the one-line triage comment. Not your reasoning prose.

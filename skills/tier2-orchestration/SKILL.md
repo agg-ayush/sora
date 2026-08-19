@@ -41,12 +41,11 @@ without a specific `task_id` to drive, stop and ask which issue you are Tier-2 f
 
 **Preflight — kanban must be initialized.** Your claim lock, gate evidence, and
 the ledger/design attachments all live in the kanban backend (native Hermes, no
-daemon needed). **Board: use the `--board <slug>` that T1 passed in your handoff
-brief on EVERY `hermes kanban` call.** Never rely on the sticky active board — it
-drifts and tasks land on the wrong repo's board. If T1 didn't specify one, resolve
-it: `hermes kanban boards list --json` → the board whose `default_workdir` == your
-repo path. No health-check curl, no daemon — kanban is always available as long as
-Hermes is running.
+daemon needed). **Pass `--board <slug>` on EVERY `hermes kanban` call** — never
+rely on the sticky active board; resolution procedure per the
+`tier1-suborchestration` skill's board-resolution step (T1 passes the slug in
+your handoff brief). No health-check curl, no daemon — kanban is always
+available as long as Hermes is running.
 
 ## Core principles (non-negotiable)
 
@@ -67,13 +66,10 @@ Hermes is running.
    reads the real diff; YOU run the test suite yourself. An agent writing
    `outcome=DONE` or "tests pass" is a claim, not evidence.
 4. **Code comment/docstring conventions — enforce in every coding-session
-   prompt.** The T3 worker (Claude Code, kimi-k3) does not inherit Hermes memory
-   or the user's global comment conventions. Every coding-session prompt (Phase 2
-   implementation, Phase 3.3 review-fix) must include: terse, present-tense,
-   necessary only — no restating what the code shows, no issue/PR references, no
-   narrating past/fixed behavior. Docstrings: only what's necessary — what it
-   does + non-obvious caller contract; no design-rationale or 'why' narration the
-   code already shows. Prefer no comment over a noisy one.
+   prompt.** The verbatim convention text is in the Phase 2 prompt template
+   (kept there as a copy-paste block — use that text, don't paraphrase). The
+   T3 worker does not inherit Hermes memory or the user's global conventions, so
+   the prompt must carry them.
 5. **Boundary rule.** Coding sessions + code review → `claude_orchestrate` (review
    is a Claude Code `/pr-review-toolkit:review-pr` session; kimi-k3 fallback when
    claude auth is down). Test-fix → a `delegate_task` sub-agent (kimi-k3). State +
@@ -95,15 +91,9 @@ Hermes is running.
    the wrong model group (a false `claude-teams-group` alarm). For design:
    cross-engine split weakens (author+reviewer both codex-family) — note it in a
    kanban comment, proceed. Escalate only if BOTH engines down.
-   - **Stall handling:** `stalled` = pane shows NO activity indicator AND no status
-     change (a thinking/working session is NOT stalled). On a genuinely stalled
-     claude session: first check `doom_loop` in the status/wait output — if
-     `doom_loop: true`, the session is in a tool-call loop (same tool + same
-     normalized args 3+ times) — do NOT steer or wait again, ESCALATE
-     immediately (report the loop fingerprint and stop the session). If
-     `doom_loop` is false, `interrupt` (Esc) once → `wait`; if still stalled,
-     `diagnose` (captures pane+log for root-causing) then `stop` → fall back
-     to codex. Codex ignores `--effort`.
+   - **Stall handling:** `stalled` = pane shows NO activity indicator AND no
+     status change (a thinking/working session is NOT stalled). The operative
+     `doom_loop`/stall branch is in the Phase 2 branch table below — apply it.
 8. **Never `sleep`-and-peek to wait on a spawned session. Use `claude_orchestrate
    wait`.** It blocks event-driven and returns the instant the session leaves
    `working` — no fixed-interval `sleep` + `capture-pane` loop. (For non-session
@@ -195,8 +185,8 @@ target repo to ground the design; it does not write to it.
    split in a kanban comment). Escalate only if BOTH engines unavailable.
 2. Write the raw task to a file (`<task-file>`, out-of-repo). Choose an
    `<out-path>` for the design doc OUTSIDE any repo (task artifact dir or tmp).
-3. `claude_orchestrate start` in a SCRATCH DIR (not the target repo, no
-   `worktree`), `executor=claude`, `model_provider=fireworks` (Kimi K3 via
+3. `claude_orchestrate start` in the scratch dir (per Inputs; no `worktree`),
+   `executor=claude`, `model_provider=fireworks` (Kimi K3 via
    Fireworks — the design author), `effort=high`. Do NOT pass `model` (K3 is set
    via env, not `--model`). `task_id` e.g. `t2-<TASK_ID>-design`.
    Prompt (verbatim shape): "Read `<task-file>` (and read the target repo at
@@ -215,7 +205,7 @@ target repo to ground the design; it does not write to it.
    exceeds the TTL).
 
 **1b.2 Design review** (Codex/Sol, cross-engine):
-1. `claude_orchestrate start` in a scratch dir, `executor=codex`,
+1. `claude_orchestrate start` in the scratch dir (per Inputs), `executor=codex`,
    `model=openai-group/gpt-5.6-sol` (Sol — the design reviewer). `task_id` e.g.
    `t2-<TASK_ID>-dreview`. Choose a `<verdict-path>` OUTSIDE any repo. Prompt
    (verbatim shape): "Read the design doc at `<doc-path>` and the task at
@@ -237,7 +227,7 @@ target repo to ground the design; it does not write to it.
    - `approved: no` → write the blocking issues to a file (`<issues-file>`,
      out-of-repo). Start a NEW Claude Code author session
      (`model_provider=fireworks`, `effort=high`)
-     in a scratch dir, pointed at the current doc + `<issues-file>` to REVISE:
+     in the scratch dir (per Inputs), pointed at the current doc + `<issues-file>` to REVISE:
      "Read the design doc at `<doc-path>` and the blocking issues at
      `<issues-file>`. Revise the doc in place to address every blocking issue.
      Then set status complete + write DONE to your outcome file." Then run a
@@ -306,9 +296,8 @@ Repeat until all units done or a stop condition fires:
    - `task_id` for the plugin is the tmux session name (e.g. `t2-<TASK_ID>-u3`).
      Keep it lowercase. The kanban task_id is separate and used for claim/comment/
      heartbeat/complete calls.
-   - The kanban claim is independent of the coding executor. If claude is down,
-     fall back to `executor=codex` — the claim stays held (no need to
-     release/re-claim).
+   - The kanban claim is independent of the coding executor (principle #7) —
+     fall back to `executor=codex` without releasing the claim.
    - **Graphify seed (only when the main repo has a `.graphify/` graph):** the
      worktree starts with NO graph (it's not committed, so `git worktree add`
      doesn't propagate it). Right after `start` returns and the worktree exists,
@@ -329,7 +318,7 @@ Repeat until all units done or a stop condition fires:
      may not). Do not block the unit on the update finishing — it runs in the
      worktree and the post-commit hook keeps it current from here.
 3. `claude_orchestrate wait` with SHORT timeouts + heartbeats between waits —
-   the same SHORT-wait + heartbeat loop as principle #8.
+   the principle #8 loop.
 4. Branch on the returned `state` + `outcome`:
    - `state=done` or `exited` → read `outcome`:
      - `DONE` → Phase 3 gate.
@@ -355,9 +344,8 @@ Repeat until all units done or a stop condition fires:
      (Stall = no activity indicator in the pane AND no status change — a
      session showing a thinking/working spinner is NOT stalled.)
    - **Fallback on failed/crashed/stalled claude run**: retry the SAME unit ONCE
-     with `executor=codex`. The kanban claim stays held (no need to
-     release/re-claim — the claim is separate from the executor). If codex also
-     fails → ESCALATE.
+     with `executor=codex`. The claim stays held (independent of the executor —
+     principle #7). If codex also fails → ESCALATE.
 5. Track an iteration counter in the ledger; exceed a sane max (e.g. 10) → ESCALATE.
 6. After each unit completes: update the ledger file and `hermes kanban attach
    <task_id> <ledger-file>`. Then `hermes kanban heartbeat <task_id> --note
@@ -448,9 +436,9 @@ session** (not the implementer session):
    your outcome file." Launch with `effort=medium` (high effort is the main claude
    hang trigger; a structured-verdict review doesn't need it). Do NOT pass `model`
    in the fireworks path (K3 is set via env).
-2. `wait` for the session; read the verdict file. (This is a distinct review
-   session from the implementer session — never reuse the implementer to review
-   its own work.)
+2. `wait` for the session; read the verdict file. (Distinct review session from
+   the implementer — per the `pr-review-toolkit` Pitfalls entry, never reuse the
+   implementer to review its own work.)
 3. On `needs_fixes`/`spec:fail`: dispatch ONE fix via a coding session
    (`claude_orchestrate start`, same worktree) with ALL findings + the
    structured feedback appended to its brief; then re-run the review (primary or
@@ -609,6 +597,8 @@ rules for that agent; skip silently.
 records to refresh counts).
 
 ## Pitfalls
+- **Block syntax gotcha (argparse ordering):** `--kind needs_input` must come
+  BEFORE the task_id — `hermes kanban block --kind needs_input <task_id> <reason>`.
 - Pasting accumulated history or the design-doc body into dispatch prompts → use
   file handoffs (out-of-repo paths); read only verdict files.
 - Letting the test-fixer edit implementation source → enforce with `check_diff`
