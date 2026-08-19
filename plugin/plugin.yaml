@@ -1,0 +1,4 @@
+name: claude-orchestrate
+version: 1.1.0
+description: "Drive interactive Claude Code sessions inside tmux with low-latency observability — start, poll status, wait (block until needs-input/exit), steer, fetch results, and stop."
+author: Ayush
