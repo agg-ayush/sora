@@ -199,6 +199,34 @@ next issue — you are still warm.
 - To see your set's state at once, `hermes kanban list [--json]` — but
   the USER watches the dashboard, not your text output.
 
+## Reacting to your T2s without blocking (background watcher)
+
+When you have outstanding T2s and want to react the moment one raises a PR or
+blocks — WITHOUT tying up your main turn — spawn a **bounded background watcher
+subagent**, then keep working:
+
+```
+delegate_task(background=true, goal="Run `hermes kanban --board <slug> watch
+--assignee <your-assignee> --kinds review_requested,blocked --interval 2` for up
+to ~25 minutes. The INSTANT a matching event appears for a task in my set,
+report it: task_id, kind, title, and the PR link if review_requested. If the
+window lapses with no event, exit quietly with 'no events'.")
+```
+
+When the subagent finishes, its result is injected back into THIS session as a
+new turn automatically (no polling, no blocking your main loop). On
+`review_requested`: pull the PR link, tell the user, ask for merge approval. On
+`blocked`: read the task, surface what it needs. On "no events": re-arm a fresh
+watcher if T2s are still outstanding.
+
+Rules:
+- **Bounded, not infinite** — keep the watch window under the delegation timeout
+  (30 min default). A quiet window ends the watcher; re-arm on the injected turn.
+- **One watcher at a time** — don't stack them; if one's already armed, wait for
+  its turn to come back before re-arming.
+- This is how you stay responsive AND keep working — never block your own turn on
+  `kanban watch` directly.
+
 ## Escalate to a human when
 - The task itself is ambiguous in a way that blocks even triage (not just build).
 - The task implies impactful shared-infra / cross-repo changes beyond this
