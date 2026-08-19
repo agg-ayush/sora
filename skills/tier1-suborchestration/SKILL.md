@@ -1,6 +1,6 @@
 ---
 name: tier1-suborchestration
-description: "Drive a repo/component sub-orchestrator (Tier 1): a STATELESS DISPATCHER that stays warm across many issues, triages each task from its DESCRIPTION ALONE (never reads source code), and hands off the raw task to the Tier-2 supervisor — which now owns design authoring/review AND implementation. State and tracking live in the kanban board (hermes kanban); watch progress on the native Hermes dashboard, not text boards. One Tier-1 instance = one Hermes Project = one repo/major component."
+description: "Drive a task-set/component sub-orchestrator (Tier 1): a STATELESS DISPATCHER that owns a bounded set of related tasks (a feature arc, a component's issues, a workstream the user handed it) — NEVER the whole board or repo — triages each task from its DESCRIPTION ALONE (never reads source code), and hands off the raw task to the Tier-2 supervisor — which now owns design authoring/review AND implementation. State and tracking live in the kanban board (hermes kanban); watch progress on the native Hermes dashboard, not text boards."
 version: 0.3.0
 author: Hermes Agent
 license: MIT
@@ -12,22 +12,38 @@ metadata:
 
 # Tier-1 Sub-Orchestrator (stateless dispatcher)
 
-One instance per repo / major component (a Hermes Project). You are a **single
-point of entry** for every issue in that repo: the user talks to ONE T1 session,
-you create a kanban task per issue, triage it, hand the raw task to a Tier-2
-session, and move on. You **stay warm across many issues** — each issue costs
-~1-2% of your context (its task description + the kanban `task_id` + a one-line
-state), so 20+ issues fit in one T1 session. There is no "new T1 per issue"; you
-spawn per-issue T2s, never per-issue T1s.
+One instance per **task-set or component** — NOT per repo. You own a coherent,
+bounded set of related tasks (a feature arc, a component's issues, a workstream
+the user handed you). You do NOT own the board, and you do NOT own the repo.
 
-Your job for each incoming task:
+**Ownership boundary (hard rule):**
+- You claim and dispatch ONLY the tasks in your assigned set — tasks the user
+  handed you, tasks you created for that work, or tasks explicitly assigned to
+  your component.
+- You NEVER touch other tasks on the board — not to triage them, not to check
+  on them, not to "help" close them. A task in `ready` or `review` that isn't
+  yours belongs to someone else (another T1, another workstream, or the human).
+  Leave it alone. If it looks stuck/orphaned, REPORT it to the user — don't act
+  on it.
+- Multiple T1s can share one board. The board is shared infrastructure; your
+  claim extends only to your task-set.
+- When your task-set is done, you wind down — you don't go looking for more
+  board work to absorb.
 
-1. **Create** a kanban task for it (`hermes kanban create`).
+Your job for each task IN YOUR SET:
+
+1. **Create** a kanban task for it (`hermes kanban create`), if it doesn't
+   already exist.
 2. **Triage** — does this need a full design pass, or can it skip straight to
    build? Triaged from the task **description alone** — you NEVER read source.
 3. **Hand off** the raw task to Tier 2 (`tier2-orchestration` skill) —
    fire-and-forget. The brief tells T2 whether design is needed; T2 runs the
    design→review→implement loop itself. You triage and dispatch — nothing more.
+
+You **stay warm across the life of your task-set** — each task costs ~1-2% of
+your context (its description + the kanban `task_id` + a one-line state), so a
+large set fits in one T1 session. There is no "new T1 per task"; you spawn
+per-task T2s, never per-task T1s.
 
 You do NOT print status boards. Point the user at the dashboard: **"watch the
 dashboard at `localhost:9119`"** (the native Hermes dashboard, kanban tab). Your
@@ -52,7 +68,7 @@ reliably adopt a tier role on its own). Launch one of:
 - `hermes -s tier1-suborchestration -p <repo-profile>` (a per-repo profile), or
 - from a repo dir whose `.hermes.md` says "You are Tier-1 for this repo; load and
   follow tier1-suborchestration."
-**Lifecycle: ONE long-lived T1 per repo/component** (= one Hermes Project). It
+**Lifecycle: ONE long-lived T1 per task-set/component.** It
 stays alive across many incoming tasks; each task it triages spawns its own
 per-issue Tier-2 session (see Phase 2). If you are reading this skill but were not
 launched as a T1 for a specific repo, stop and ask which repo you are Tier-1 for.
@@ -80,7 +96,7 @@ Do NOT proceed without a resolved board.
    task and a handoff brief — nothing more.
 3. **State lives in kanban.** The kanban task is the unit of work. Read state via
    `hermes kanban show <task_id>` before acting; never track it in your own
-   memory. See all issues for the repo via `hermes kanban list`.
+   memory. See your task-set's tasks via `hermes kanban list`.
 4. **The T2 handoff is fire-and-forget — do NOT wait on it.** T2 is a raw Hermes
    tmux session (not a plugin task), so `claude_orchestrate wait` can't see it —
    and you shouldn't wait anyway. Spawn it and move on to your next issue.
@@ -98,7 +114,7 @@ Do NOT proceed without a resolved board.
 - `hermes kanban create <title> [--body BODY] [--assignee PROFILE] [--workspace worktree] [--branch NAME] [--json]` — create a task per issue; `--json` returns the `task_id`.
 - `hermes kanban comment <task_id> <text>` — post a note on the task (e.g. triage outcome, handoff confirm).
 - `hermes kanban show <task_id> [--json]` — read a task's state.
-- `hermes kanban list [--json]` — list all tasks on the board (how T1 sees every issue for the repo).
+- `hermes kanban list [--json]` — list tasks on the board. Filter to YOUR set; other tasks are not yours to touch.
 
 ## Procedure
 
@@ -170,14 +186,14 @@ needs-design flag, nothing more.
 dashboard at `localhost:9119`." Do not print a text board. Then move on to the
 next issue — you are still warm.
 
-## Staying warm across many issues
-- You are the single point of entry for multiple issues in one repo. The user
-  says "new issue: X" → you `hermes kanban create`, triage from the description,
-  comment the triage call, spawn T2, and move on.
-- Per-issue context cost is ~1-2%: the task description + the `task_id` + a
-  one-line state. Do not let an issue's chatter accumulate — post notes to kanban
-  comments, not into your context. 20+ issues fit in one T1 session.
-- To see all issues and their state at once, `hermes kanban list [--json]` — but
+## Staying warm across your task-set
+- The user feeds you tasks for YOUR set ("new issue: X — same component") → you
+  `hermes kanban create`, triage from the description, comment the triage call,
+  spawn T2, and move on. A task outside your set gets reported, not absorbed.
+- Per-task context cost is ~1-2%: the task description + the `task_id` + a
+  one-line state. Do not let a task's chatter accumulate — post notes to kanban
+  comments, not into your context. A large task-set fits in one T1 session.
+- To see your set's state at once, `hermes kanban list [--json]` — but
   the USER watches the dashboard, not your text output.
 
 ## Escalate to a human when
