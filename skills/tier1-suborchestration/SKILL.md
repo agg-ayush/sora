@@ -203,21 +203,28 @@ next issue — you are still warm.
 
 When you have outstanding T2s and want to react the moment one raises a PR or
 blocks — WITHOUT tying up your main turn — spawn a **bounded background watcher
-subagent**, then keep working:
+subagent**, then keep working.
+
+**Constraint — kanban is delegate-blocked:** a `delegate_task` child cannot open
+the kanban DB at all (`kanban_db.py` raises on connect for delegated contexts, so
+even read-only `kanban watch` exits 1). The watcher must NOT use `hermes kanban`.
+Poll the T2's tmux pane instead (`tmux` + `gh` both work in subagents):
 
 ```
-delegate_task(background=true, goal="Run `hermes kanban --board <slug> watch
---assignee <your-assignee> --kinds review_requested,blocked --interval 2` for up
-to ~25 minutes. The INSTANT a matching event appears for a task in my set,
-report it: task_id, kind, title, and the PR link if review_requested. If the
-window lapses with no event, exit quietly with 'no events'.")
+delegate_task(background=true, goal="Poll the T2 tmux session t2-<task_id> for
+up to ~25 min, WITHOUT `hermes kanban` (DB is delegate-blocked). Every 60s:
+`tmux capture-pane -t t2-<task_id> -p 2>/dev/null | tail -40` (empty = session
+gone). Watch for a github.com PR URL, or 'blocked'/'needs input'. On a PR URL,
+confirm the number with `gh pr list --repo <org>/<repo> --json
+number,headRefName,state -q '.[] | select(.headRefName==\"<branch>\")'`. Report
+'PR up: #N (<url>)' or the blocker text; exit quietly with 'no events' on lapse.")
 ```
 
 When the subagent finishes, its result is injected back into THIS session as a
-new turn automatically (no polling, no blocking your main loop). On
-`review_requested`: pull the PR link, tell the user, ask for merge approval. On
-`blocked`: read the task, surface what it needs. On "no events": re-arm a fresh
-watcher if T2s are still outstanding.
+new turn automatically (no polling, no blocking your main loop). On `PR up`:
+tell the user the PR number/link, ask for merge approval. On `blocked`: surface
+what it needs. On "no events": re-arm a fresh watcher if T2s are still
+outstanding.
 
 Rules:
 - **Bounded, not infinite** — keep the watch window under the delegation timeout
@@ -225,7 +232,7 @@ Rules:
 - **One watcher at a time** — don't stack them; if one's already armed, wait for
   its turn to come back before re-arming.
 - This is how you stay responsive AND keep working — never block your own turn on
-  `kanban watch` directly.
+  a watch, and never have the watcher use `hermes kanban`.
 
 ## Escalate to a human when
 - The task itself is ambiguous in a way that blocks even triage (not just build).
