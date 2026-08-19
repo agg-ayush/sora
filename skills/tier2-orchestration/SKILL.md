@@ -56,12 +56,13 @@ available as long as Hermes is running.
    the #1 expensive failure.
 2. **The kanban claim is your safety net + heartbeat discipline.** It structurally
    prevents duplicate work even if you misjudge — but still read state first. The
-   TTL is 900s (15 min): call `hermes kanban heartbeat <task_id> --note "<progress>"`
-   at each status.md write AND between `claude_orchestrate wait` calls. **`wait`
-   blocks your event loop — you cannot heartbeat while blocked.** Use SHORT waits
-   (timeout=120) + heartbeat between waits; if the session is still `working`,
-   heartbeat then `wait` again. Long design/implementation turns routinely exceed
-   900s — without this loop the claim expires and another T2 double-claims.
+   TTL is 900s (15 min). **Pass `kanban_task_id` (and `kanban_board` when set) on
+   every `claude_orchestrate start`** — the plugin then auto-heartbeats the kanban
+   claim from INSIDE its long blocking calls (`wait`/`gate`), throttled to 60s,
+   so a >TTL blocked `wait` can't starve the claim into a stale reclaim. Still
+   call `hermes kanban heartbeat <task_id> --note "<progress>"` yourself at each
+   status.md write / unit completion / ledger update for progress notes — the
+   auto-heartbeat only keeps the claim alive; it carries no progress context.
 3. **Never trust an agent's self-report.** Verify with real tool output. `gate`
    reads the real diff; YOU run the test suite yourself. An agent writing
    `outcome=DONE` or "tests pass" is a claim, not evidence.
@@ -187,7 +188,9 @@ target repo to ground the design; it does not write to it.
    `<out-path>` for the design doc OUTSIDE any repo (task artifact dir or tmp).
 3. `claude_orchestrate start` in the scratch dir (per Inputs; no `worktree`),
    `executor=claude`, `model_provider=fireworks` (Kimi K3 via
-   Fireworks — the design author), `effort=high`. Do NOT pass `model` (K3 is set
+   Fireworks — the design author), `effort=high`, `kanban_task_id=<kanban task>`
+   (+ `kanban_board=<slug>` when the board is set) so the plugin auto-heartbeats
+   the claim during the long wait (principle #2). Do NOT pass `model` (K3 is set
    via env, not `--model`). `task_id` e.g. `t2-<TASK_ID>-design`.
    Prompt (verbatim shape): "Read `<task-file>` (and read the target repo at
    `<repo-path>` as needed) and write a design doc to `<out-path>`: problem
@@ -200,13 +203,15 @@ target repo to ground the design; it does not write to it.
    and write DONE to your outcome file."
 4. `claude_orchestrate wait` for the session; on `done`/`DONE` the doc exists at
    `<out-path>`. Do NOT read the doc content into your context — you only need
-   its path for the reviewer. Use the SHORT-wait + heartbeat loop from
-   principle #8 until the session finishes (a high-effort design turn routinely
-   exceeds the TTL).
+   its path for the reviewer. The wait may be long (a high-effort design turn
+   routinely exceeds the TTL) — with `kanban_task_id` passed at `start`, the
+   plugin auto-heartbeats the claim from inside `wait` (principle #2).
 
 **1b.2 Design review** (Codex/Sol, cross-engine):
 1. `claude_orchestrate start` in the scratch dir (per Inputs), `executor=codex`,
-   `model=openai-group/gpt-5.6-sol` (Sol — the design reviewer). `task_id` e.g.
+   `model=openai-group/gpt-5.6-sol` (Sol — the design reviewer),
+   `kanban_task_id=<kanban task>` (+ `kanban_board=<slug>` when set — principle
+   #2 auto-heartbeat). `task_id` e.g.
    `t2-<TASK_ID>-dreview`. Choose a `<verdict-path>` OUTSIDE any repo. Prompt
    (verbatim shape): "Read the design doc at `<doc-path>` and the task at
    `<task-file>`. Review the doc against the task + constraints. Write your
@@ -221,8 +226,9 @@ target repo to ground the design; it does not write to it.
    nonblocking_suggestions:
    - <suggestion, or "none">
    ```"
-2. `claude_orchestrate wait`; read the VERDICT file (NOT the doc). **Use the same
-   SHORT-wait + heartbeat loop as 1b.1** (principle #8). Branch:
+2. `claude_orchestrate wait`; read the VERDICT file (NOT the doc). **Same
+   auto-heartbeat coverage as 1b.1** — `kanban_task_id` was passed at `start`,
+   so the plugin keeps the claim alive inside the wait (principle #2). Branch:
    - `approved: yes` → design accepted. Proceed to 1b.3 (attach + implement).
    - `approved: no` → write the blocking issues to a file (`<issues-file>`,
      out-of-repo). Start a NEW Claude Code author session
@@ -280,6 +286,8 @@ Repeat until all units done or a stop condition fires:
    doc, write the initial ledger, attach it, start at unit 1.)
 2. `claude_orchestrate start`: `task_id`, `workdir`, `worktree=<name>`,
    `executor=claude`, `model_provider=fireworks` (Kimi K3), `effort=medium`,
+   `kanban_task_id=<kanban task>` (+ `kanban_board=<slug>` when set — the plugin
+   auto-heartbeats the claim inside the long `wait`, principle #2),
    `prompt` = "Read <brief-file> and the
    design doc, implement this unit. Code comments/docstrings: terse, present-tense,
    necessary only — no restating what the code shows, no issue/PR references, no
@@ -317,8 +325,9 @@ Repeat until all units done or a stop condition fires:
      silently if the main repo has no graph (app does, content does; a fresh repo
      may not). Do not block the unit on the update finishing — it runs in the
      worktree and the post-commit hook keeps it current from here.
-3. `claude_orchestrate wait` with SHORT timeouts + heartbeats between waits —
-   the principle #8 loop.
+3. `claude_orchestrate wait` for the session — with `kanban_task_id` passed at
+   `start`, the plugin auto-heartbeats the claim from inside `wait` (principle
+   #2); no manual heartbeat-between-waits loop needed.
 4. Branch on the returned `state` + `outcome`:
    - `state=done` or `exited` → read `outcome`:
      - `DONE` → Phase 3 gate.
@@ -421,7 +430,8 @@ back to Phase 2.
 the `pr-review-toolkit` `/pr-review-toolkit:review-pr` command in a **Claude Code
 session** (not the implementer session):
 1. `claude_orchestrate start` a Claude Code session (`executor=claude`,
-   `model_provider=fireworks` — Kimi K3) in the
+   `model_provider=fireworks` — Kimi K3; pass `kanban_task_id`/`kanban_board`
+   as everywhere else, principle #2) in the
    task's worktree (`workdir=<rundir>`). Prompt it to run the pr-review-toolkit
    the review over this unit's changes and write a structured verdict to an
    out-of-repo file. The review should specifically probe: (a) resource-lifecycle

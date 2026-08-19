@@ -73,8 +73,11 @@ holo 2
 
 Tier sessions MUST be persistent interactive tmux sessions, NOT `hermes … -q`
 (single-query exits and strands delegate_task results). Exact spawn incantation
-per the `hermes-session-cli-launch` skill. Heartbeat discipline per the tier2
-skill's claim/heartbeat principle.
+per the `hermes-session-cli-launch` skill. Claim keep-alive is structural: T2
+passes `kanban_task_id`/`kanban_board` on every `claude_orchestrate start`, and
+the plugin auto-heartbeats the kanban claim from inside its long blocking
+`wait`/`gate` calls — see the plugin's auto-heartbeat bullet below and the
+tier2 skill's claim/heartbeat principle (#2).
 
 ## The plugin — `claude-orchestrate`
 
@@ -88,7 +91,15 @@ Key features:
 - `start` — launches Claude Code or Codex in tmux; optional `effort` (claude
   `--effort`), `model`, `worktree`. Exports `TFY_API_KEY` into the tmux session
   (the server may not inherit it). Codex prompt sent via `send-keys` (positional
-  args trigger a 0.144.x bug).
+  args trigger a 0.144.x bug). Accepts optional `kanban_task_id`/`kanban_board`
+  linkage, recorded in the session's `meta.json` for the auto-heartbeat.
+- Kanban auto-heartbeat — when a session was started with `kanban_task_id`, the
+  plugin heartbeats that kanban claim from INSIDE the long blocking `wait`/`gate`
+  calls (throttled to 60s per session, forced once at `gate`; failures never
+  raise). This is the structural fix for a >TTL blocked `wait` starving the
+  900s claim into a stale reclaim — the supervisor's event loop is blocked
+  inside `wait`, so the heartbeat has to come from inside the plugin. T2 still
+  heartbeats manually at progress points for the note text.
 - Four-status outcome — agents write `DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED`
   to `outcome.md`; `status`/`wait`/`result` surface it.
 - Tool-agnostic stall detection — `stalled` requires BOTH no status.md/outcome.md
@@ -109,7 +120,7 @@ Key features:
 | Create task | `hermes kanban create <title> --body <desc> --json` | T1 |
 | Atomic claim (lock) | `hermes kanban claim <task_id>` (TTL 900s) | T2 |
 | Release claim | `hermes kanban reclaim <task_id>` | T2 |
-| Heartbeat (keep alive) | `hermes kanban heartbeat <task_id> --note <text>` | T2 |
+| Heartbeat (keep alive) | `hermes kanban heartbeat <task_id> --note <text>` — plus plugin auto-heartbeat inside `wait`/`gate` for sessions started with `kanban_task_id` | T2 |
 | Gate evidence | `hermes kanban comment <task_id> <text>` | T2 |
 | Design doc / ledger | `hermes kanban attach <task_id> <file>` | T2 |
 | Human merge gate | `hermes kanban request-review <task_id> [--board <b>]` (running→review) | T2 (PR up for review) |

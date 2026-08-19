@@ -340,6 +340,17 @@ def _start(args: dict) -> dict:
         "model_provider": model_provider if executor == "claude" else None,
         "created_at": time.time(),
     }
+    # Optional kanban linkage: when the T2 supervisor passes the kanban task this
+    # session serves, long blocking plugin calls (wait/gate) auto-heartbeat the
+    # kanban claim so a >TTL blocking call can't starve the claim into a stale
+    # reclaim. tmux-spawned sessions never get a worker_pid from the dispatcher,
+    # so the reclaimer's pid-alive extension doesn't protect them.
+    kanban_task = str(args.get("kanban_task_id") or "").strip()
+    kanban_board = str(args.get("kanban_board") or "").strip()
+    if kanban_task:
+        meta["kanban_task_id"] = kanban_task
+        if kanban_board:
+            meta["kanban_board"] = kanban_board
     _write_text(artifact_dir / "meta.json", json.dumps(meta, indent=2))
 
     return {
@@ -441,6 +452,47 @@ def _read_outcome(task_id: str) -> dict:
 def _deny_guard_path() -> Path:
     """Path to the deny-guard hook script (blocks git push / gh pr / secrets in T3 sessions)."""
     return get_hermes_home() / "scripts" / "deny-guard.sh"
+
+
+_KANBAN_HB_MIN_INTERVAL = 60  # seconds between auto-heartbeats per session
+_kanban_hb_last: dict[str, float] = {}  # task_id -> last heartbeat (monotonic)
+
+
+def _maybe_kanban_heartbeat(task_id: str, *, force: bool = False) -> None:
+    """Best-effort kanban claim heartbeat for a kanban-linked session.
+
+    Reads the session's meta.json for kanban_task_id/kanban_board (set at start).
+    Shells out to `hermes kanban heartbeat` so the CLI's own rules (board routing,
+    claim verification) apply. Throttled to once per _KANBAN_HB_MIN_INTERVAL per
+    session. Never raises — a heartbeat failure must not break the plugin action.
+
+    This is the structural fix for long blocking calls starving the claim TTL:
+    the supervisor's event loop is blocked inside `wait`, so the heartbeat has to
+    come from inside the loop. tmux-spawned sessions never get a worker_pid from
+    the dispatcher, so the reclaimer's pid-alive extension doesn't protect them.
+    """
+    try:
+        meta_raw = _read_text(_artifact_dir(task_id) / "meta.json")
+        if not meta_raw:
+            return
+        meta = json.loads(meta_raw)
+        ktask = meta.get("kanban_task_id")
+        if not ktask:
+            return
+        now = time.monotonic()
+        last = _kanban_hb_last.get(task_id, 0.0)
+        if not force and (now - last) < _KANBAN_HB_MIN_INTERVAL:
+            return
+        cmd = ["hermes", "kanban"]
+        kboard = meta.get("kanban_board")
+        if kboard:
+            cmd += ["--board", str(kboard)]
+        cmd += ["heartbeat", str(ktask), "--note", "auto-heartbeat: supervised session active"]
+        result = _run(cmd)
+        if result.returncode == 0:
+            _kanban_hb_last[task_id] = now
+    except Exception:
+        pass
 
 
 def _session_state(task_id: str, tail: int = 60, stall_seconds: int = STALL_SECONDS) -> dict:
@@ -554,6 +606,10 @@ def _wait(args: dict) -> dict:
 
     deadline = time.monotonic() + timeout
     while True:
+        # Auto-heartbeat the kanban claim this session serves (if any) — the
+        # supervisor's event loop is blocked here, so a >TTL blocking wait would
+        # otherwise let the claim expire into a stale reclaim.
+        _maybe_kanban_heartbeat(task_id)
         state = _session_state(task_id, tail, stall_seconds)
         if state["state"] in {"needs_input", "stalled", "done", "exited"}:
             return {"ok": True, "timed_out": False, **state}
@@ -887,6 +943,12 @@ def _gate(args: dict) -> dict:
     if not task_id:
         return {"ok": False, "error": "task_id is required"}
 
+    # The gate runs at the end of a long supervised turn — heartbeat the kanban
+    # claim (if linked) so the claim is fresh when the supervisor next comments
+    # gate evidence. Forced (bypasses the throttle): this runs once per phase,
+    # not in a poll loop.
+    _maybe_kanban_heartbeat(task_id, force=True)
+
     impl = _check_impl_complete(task_id)
     review = _coerce_verdict(args.get("review"), "not implemented (Tier-2)")
     tests = _coerce_verdict(args.get("tests"), "not implemented (Tier-2)")
@@ -969,6 +1031,22 @@ CLAUDE_ORCHESTRATE_SCHEMA = {
             "task_id": {"type": "string", "description": "tmux session name / artifact dir name"},
             "prompt": {"type": "string", "description": "Initial task for Claude (start)"},
             "workdir": {"type": "string", "description": "Absolute dir Claude runs in (start)"},
+            "kanban_task_id": {
+                "type": "string",
+                "description": (
+                    "Kanban task this session serves (start). When set, long blocking calls "
+                    "(wait/gate) auto-heartbeat the kanban claim so a >TTL blocking call can't "
+                    "starve the claim into a stale reclaim. Persisted to meta.json."
+                ),
+            },
+            "kanban_board": {
+                "type": "string",
+                "description": (
+                    "Kanban board slug for kanban_task_id (start). Passed as --board on the "
+                    "auto-heartbeat CLI call so board routing never relies on the sticky "
+                    "active board."
+                ),
+            },
             "worktree": {
                 "type": "string",
                 "description": "If set, create a git worktree+branch of this name off workdir before running Claude there (start)",
