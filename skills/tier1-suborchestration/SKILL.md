@@ -205,20 +205,21 @@ When you have outstanding T2s and want to react the moment one raises a PR or
 blocks — WITHOUT tying up your main turn — spawn a **bounded background watcher
 subagent**, then keep working.
 
-**Constraint — kanban is delegate-blocked:** a `delegate_task` child cannot open
-the kanban DB at all (`kanban_db.py` raises on connect for delegated contexts, so
-even read-only `kanban watch` exits 1). The watcher must NOT use `hermes kanban`.
-Poll the T2's tmux pane instead (`tmux` + `gh` both work in subagents):
+**Use `kanban watch` from the watcher (readonly-kanban mod):** the local
+readonly-kanban patch (see `docs/local-upstream-mods.md`) lets a
+`delegate_task` child open the kanban DB read-only, so a background watcher
+CAN use `hermes kanban … watch` directly:
 
 ```
-delegate_task(background=true, goal="Poll the T2 tmux session t2-<task_id> for
-up to ~25 min, WITHOUT `hermes kanban` (DB is delegate-blocked). Every 60s:
-`tmux capture-pane -t t2-<task_id> -p 2>/dev/null | tail -40` (empty = session
-gone). Watch for a github.com PR URL, or 'blocked'/'needs input'. On a PR URL,
-confirm the number with `gh pr list --repo <org>/<repo> --json
-number,headRefName,state -q '.[] | select(.headRefName==\"<branch>\")'`. Report
-'PR up: #N (<url>)' or the blocker text; exit quietly with 'no events' on lapse.")
+delegate_task(background=true, goal="Run `hermes kanban --board <slug> watch --assignee <your-assignee> --kinds review_requested,blocked --interval 2` for up to ~25 minutes. The INSTANT a matching event appears for a task in my set, report it: task_id, kind, title, and the PR link if review_requested. If the window lapses with no event, exit quietly with 'no events'.")
 ```
+
+**Fallback (if the local mod is ever lost after an `hermes update`):** poll
+the T2's tmux pane instead — `tmux` + `gh` both work in subagents even when
+the kanban DB is delegate-blocked. Every 60s: `tmux capture-pane -t
+t2-<task_id> -p 2>/dev/null | tail -40` (empty = session gone); watch for a
+github.com PR URL, or 'blocked'/'needs input'; confirm the PR number with
+`gh pr list --repo <org>/<repo> --json number,headRefName,state`.
 
 When the subagent finishes, its result is injected back into THIS session as a
 new turn automatically (no polling, no blocking your main loop). On `PR up`:
@@ -231,8 +232,9 @@ Rules:
   (30 min default). A quiet window ends the watcher; re-arm on the injected turn.
 - **One watcher at a time** — don't stack them; if one's already armed, wait for
   its turn to come back before re-arming.
-- This is how you stay responsive AND keep working — never block your own turn on
-  a watch, and never have the watcher use `hermes kanban`.
+- This is how you stay responsive AND keep working — never block your own turn
+  on a watch. The watcher's kanban access is read-only (mutation trust boundary
+  intact — see `docs/local-upstream-mods.md`).
 
 ## Escalate to a human when
 - The task itself is ambiguous in a way that blocks even triage (not just build).

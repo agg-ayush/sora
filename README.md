@@ -98,3 +98,10 @@ prompt to answer). Never kills an actively-working session or a session at a
 prompt waiting for a steer.
 
 See `docs/hermes-tiers-reference.md` for the full architecture reference.
+
+## Local upstream mods
+
+We carry a small number of local patches to the live `~/.hermes/hermes-agent`
+clone that are NOT pushed upstream (currently: readonly kanban connect for
+delegated children, which powers the T1 background kanban watcher). See
+`docs/local-upstream-mods.md` — re-apply after every `hermes update`.
