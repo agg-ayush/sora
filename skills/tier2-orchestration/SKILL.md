@@ -210,13 +210,9 @@ target repo to ground the design; it does not write to it.
    and write DONE to your outcome file."
 4. `claude_orchestrate wait` for the session; on `done`/`DONE` the doc exists at
    `<out-path>`. Do NOT read the doc content into your context — you only need
-   its path for the reviewer. **The claim TTL is 900s and `wait` blocks your event
-   loop — you cannot heartbeat while blocked.** Use SHORT waits + heartbeats in a
-   loop: `wait` with `timeout=120` (2 min); if the session is still `working`
-   (timeout), call `hermes kanban heartbeat <task_id> --note "design authoring in
-   progress"`, then `wait` again. Repeat until the session finishes. A high-effort
-   design turn routinely exceeds 900s — without this loop the claim expires and
-   another T2 can double-claim.
+   its path for the reviewer. Use the SHORT-wait + heartbeat loop from
+   principle #8 until the session finishes (a high-effort design turn routinely
+   exceeds the TTL).
 
 **1b.2 Design review** (Codex/Sol, cross-engine):
 1. `claude_orchestrate start` in a scratch dir, `executor=codex`,
@@ -236,8 +232,7 @@ target repo to ground the design; it does not write to it.
    - <suggestion, or "none">
    ```"
 2. `claude_orchestrate wait`; read the VERDICT file (NOT the doc). **Use the same
-   SHORT-wait + heartbeat loop as 1b.1** (timeout=120 per wait, heartbeat between
-   waits). Branch:
+   SHORT-wait + heartbeat loop as 1b.1** (principle #8). Branch:
    - `approved: yes` → design accepted. Proceed to 1b.3 (attach + implement).
    - `approved: no` → write the blocking issues to a file (`<issues-file>`,
      out-of-repo). Start a NEW Claude Code author session
@@ -333,10 +328,8 @@ Repeat until all units done or a stop condition fires:
      silently if the main repo has no graph (app does, content does; a fresh repo
      may not). Do not block the unit on the update finishing — it runs in the
      worktree and the post-commit hook keeps it current from here.
-3. `claude_orchestrate wait` with SHORT timeouts + heartbeats between waits
-   (timeout=120 per wait; if still `working`, heartbeat then wait again — the
-   claim TTL is 900s and a long implementation turn can exceed it while `wait`
-   blocks your event loop, preventing heartbeats).
+3. `claude_orchestrate wait` with SHORT timeouts + heartbeats between waits —
+   the same SHORT-wait + heartbeat loop as principle #8.
 4. Branch on the returned `state` + `outcome`:
    - `state=done` or `exited` → read `outcome`:
      - `DONE` → Phase 3 gate.
@@ -450,9 +443,8 @@ session** (not the implementer session):
    swallowed errors (a catch that logs but continues, a return-code ignored);
    (d) check-then-act without atomicity (a `if not exists: create` that races,
    a read-modify-write without a lock). Then write your verdict to <verdict-path>
-   as: `spec: pass|fail`, `quality: approved|needs_fixes`, `confidence: <0-100>`,
-   `findings: [...]`, plus `state_transitions: clean|needs_fixes` if the
-   state-transition-reviewer fired. Set status complete + write DONE to
+   in the `pr-review-toolkit` verdict format (that skill's "The verdict format"
+   section is canonical). Set status complete + write DONE to
    your outcome file." Launch with `effort=medium` (high effort is the main claude
    hang trigger; a structured-verdict review doesn't need it). Do NOT pass `model`
    in the fireworks path (K3 is set via env).
@@ -469,16 +461,12 @@ session** (not the implementer session):
    and ESCALATE to a human with the outstanding findings; do not
    start a 4th round. Do not open one fix session per finding.
 4. A finding that conflicts with the plan text → ESCALATE (human decides which governs).
-5. **Fallback when claude auth is down** (preflight probe fails):
-   `/pr-review-toolkit:review-pr` can't run (it's a Claude Code plugin). Fall back
-   to the Hermes-native **`requesting-code-review`** skill — run its specialist
-   reviewer batch (silent-failure-hunter, code-reviewer, comment-analyzer,
-   type-design-analyzer, pr-test-analyzer, **state-transition-reviewer**) via
-   `delegate_task` on the diff
-   (`base_sha..HEAD`). These run on the global delegation model (kimi-k3) — that's
-   fine, it's the fallback path. Fold their findings into the same structured
-   verdict; treat CRITICAL/HIGH the same as primary-review failures. Note in the
-   gate comment that review ran via the kimi-k3 fallback, not pr-review-toolkit.
+5. **Fallback when claude auth is down** (preflight probe fails): use the
+   `requesting-code-review` delegate_task fallback exactly as the
+   `pr-review-toolkit` skill's "Fallback (Claude Code auth down)" section
+   specifies; fold findings into the same structured verdict, treat
+   CRITICAL/HIGH the same, and note in the gate comment that review ran via the
+   kimi-k3 fallback, not pr-review-toolkit.
 
 **3.4 adversarial QA** (optional, HIGH-RISK changes only — NOT YET BUILT, skip
 unless the change touches auth/security/migration paths or is a large diff).

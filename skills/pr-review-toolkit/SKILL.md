@@ -20,12 +20,10 @@ worktree's changes before merge.
 ## When to use
 
 - Reviewing a PR's changes in a worktree before merge (the T2 gate's review step)
-- You want a structured verdict (spec pass/fail, quality approved/needs_fixes,
-  confidence, findings) from specialist reviewers
-- The diff introduces stateful behavior (latches, refs, machine context, admission
-  gates, persistence, restore/seed paths) — the state-transition-reviewer fires
-  conditionally and probes adversarial paths (failure-then-retry, reset coverage,
-  mid-flight config change, dual-writer desync)
+- You want a structured verdict (see "The verdict format" below) from specialist
+  reviewers
+- The diff introduces stateful behavior — the state-transition-reviewer fires
+  conditionally (see the specialist table below)
 
 **Don't use for:** a quick lint or a single-file sanity check — the toolkit is a
 full review pass, overkill for trivial changes. Don't use it in a Hermes session
@@ -45,10 +43,9 @@ claude_orchestrate start:
   prompt="Run `/pr-review-toolkit:review-pr` on the changes in this worktree
     (diff base <base_sha>..HEAD) against <brief-file>. Include the
     state-transition-reviewer if the diff introduces stateful behavior. Write
-    your verdict to <verdict-path> as: spec: pass|fail, quality:
-    approved|needs_fixes, confidence: <0-100>, findings: [...], plus
-    state_transitions: clean|needs_fixes if the stateful reviewer fired. Set
-    status complete + write DONE to your outcome file."
+    your verdict to <verdict-path> in the verdict format defined below
+    ("The verdict format"). Set status complete + write DONE to your outcome
+    file."
 ```
 
 Then `claude_orchestrate wait` and read the verdict file.
@@ -91,7 +88,7 @@ Note in the gate comment that review ran via the fallback, not the toolkit.
 - **Running it in a Hermes session** → it won't work; it's a Claude Code plugin.
   Use `claude_orchestrate start executor=claude` to launch a Claude Code session.
 - **Skipping the state-transition-reviewer on a stateful diff** → the
-  adversarial paths (failure-then-retry, etc.) go unprobed. Include it when the
-  diff introduces stateful behavior.
+  adversarial paths go unprobed (see the specialist table for what it covers).
+  Include it when the diff introduces stateful behavior.
 - **Reusing the implementer session to review its own work** → always a distinct
   review session. Never reuse the implementer to review its own work.

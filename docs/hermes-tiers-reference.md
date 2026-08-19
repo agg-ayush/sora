@@ -184,29 +184,17 @@ change) → `interrupt` (Esc) once → `diagnose` → fall back to Codex.
 
 ## State-transition review
 
-The pr-review-toolkit has a **state-transition-reviewer** specialist (7th agent,
-`agents/state-transition-reviewer.md`). It fires only when the diff introduces
-stateful behavior (latches, refs, machine context, admission gates, persistence,
-restore/seed paths). It enumerates the transition table (set/clear/reset/read for
-every identity) and probes four adversarial paths: failure-then-retry, reset
-coverage, mid-flight config change, dual-writer desync. Output: a missing-transition
-test list for pr-test-analyzer to verify coverage. Catches the class of bug where
-individual hunks look right but the composed state machine deadlocks (e.g. a latch
-set on failure that's never cleared on retry).
+Covered by the `pr-review-toolkit` skill — see the `state-transition-reviewer`
+row in its specialist-reviewers table (triggers, adversarial paths, output).
 
 **Gate order:** tests (fast, fail-fast) then review (expensive) in PARALLEL — the
 exit gate runs both concurrently, acting on tests first if they fail fast.
 
 ## Orphan reaper
 
-`~/.hermes/scripts/orphan-reaper.py` — silent `no_agent` cron (every 30m). **Heals
-recoverable failure modes** (context-compaction prompt, `redacted_thinking`
-corruption, rate-limit prompt, stuck prompt) via send-keys before considering a
-session idle; kills genuinely IDLE tier tmux sessions (no active work, no
-recoverable failure, no prompt to answer). Never kills an actively-working session
-or a session at a prompt waiting for a steer. Kanban's `dispatch` handles stale
-claims (dead-process detection). Together they prevent orphaned sessions from
-accumulating and recover sessions that would otherwise stall.
+`~/.hermes/scripts/orphan-reaper.py` — silent `no_agent` cron (every 30m) that
+heals recoverable failure modes and kills genuinely IDLE tier tmux sessions
+(behavior + boundary vs kanban `dispatch` per the README).
 
 ## What's deferred
 
