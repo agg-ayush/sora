@@ -158,10 +158,13 @@ Hermes session with the skill PRELOADED so it starts in-role. **It MUST be a
 persistent interactive session (tmux), NOT `hermes … -q`.** A `-q` single-query
 process exits the moment its own turn ends, so any `delegate_task` step it runs
 (test-fixer, design author/reviewer, review fallback) gets interrupted and its
-result is lost — the supervisor dies mid-gate. Launch it durably, then send the
-brief as a SEPARATE step from the submit, and VERIFY it actually started:
+result is lost — the supervisor dies mid-gate. Launch it durably (the launch
+incantation below is the canonical corrected form from the
+`hermes-session-cli-launch` skill — follow that skill if it ever disagrees),
+then send the brief as a SEPARATE step from the submit, and VERIFY it actually
+started:
 ```
-tmux new-session -d -s t2-<task_id> -x 200 -y 50 'hermes -s tier2-orchestration --cli'
+tmux new-session -d -s t2-<task_id> -x 200 -y 50 'hermes chat -s tier2-orchestration --tui'
 sleep 6                          # let Hermes boot to its input prompt
 # send the brief TEXT only (literal, no Enter in the same call):
 tmux send-keys -t t2-<task_id> -l 'You are the Tier-2 supervisor for kanban task <task_id> on board <board-slug> (repo <workdir>, base <base_branch>). Pass --board <board-slug> on every hermes kanban call. Triage: needs-design=<yes|no>. <If yes: run your design author→review loop first, attach the accepted doc, then implement. If no: implement directly.> Read the task body and drive it to a human-approved merge. After the human merges, run your Phase 5 cleanup: close the task via `hermes kanban complete <task_id> --result "merged via PR #N"` (the upstream's review lifecycle is first-class — complete accepts review-state tasks), then reclaim the claim and self-terminate.'

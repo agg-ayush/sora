@@ -166,7 +166,11 @@ re-set auto-merge) → verify tests → delete branch + worktree →
 ## Auth fallback
 
 Claude Code auths through a gateway that occasionally times out. Before spawning a
-claude session, probe `claude -p "reply PONG"` (~30s cap); if it fails, fall back:
+claude session, probe auth via the plugin — `claude_orchestrate start` with
+`model_provider=fireworks`, a trivial prompt ("reply PONG"), and a short timeout
+(see the tier2 skill's auth-fallback principle). Do NOT probe with a raw
+`claude -p` — that checks the TF/Anthropic endpoint, not the Fireworks path. If
+it fails, fall back:
 - Coding → `executor=codex`
 - T1 author/review → Codex sessions
 - **T2 code review** (`/pr-review-toolkit:review-pr`) → `requesting-code-review` skill

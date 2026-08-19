@@ -23,11 +23,13 @@ you coordinate, you never write the design or the implementation yourself.
 
 A Tier-2 session is **launched with this skill preloaded** for ONE specific
 issue — normally spawned by a Tier-1 session (per repo) at handoff into a
-**persistent interactive tmux session** (`tmux new-session -d … 'hermes -s
-tier2-orchestration --cli'` then send the brief). **Use `--cli`** (force the
-classic REPL): if `display.interface: tui` is the default, the TUI's stdin closes
-(EOF) in a detached tmux pane and the parent dies within minutes, taking T2 with
-it. It MUST NOT be launched as `hermes … -q`: a single-query process exits when
+**persistent interactive tmux session**. Launch incantation: use the canonical
+form from the `hermes-session-cli-launch` skill —
+`tmux new-session -d -s t2-<task_id> -x 200 -y 50 'hermes chat -s
+tier2-orchestration --tui'` then send the brief (do NOT use the stale bare
+`hermes -s <skill> --cli` form; see that skill for the failure modes and any
+flag drift). It MUST NOT be launched as `hermes … -q`: a single-query process
+exits when
 its own turn ends, so `delegate_task` steps in the gate (test-fixer, review
 fallback) get interrupted and their results are lost — the supervisor dies
 mid-gate. A persistent session stays alive to receive async re-entering results. Hermes skills are advisory, so
