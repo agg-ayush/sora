@@ -651,11 +651,15 @@ def _wait(args: dict) -> dict:
             # and no watcher flag has been consumed yet.
             if state.get("outcome") and (artifact_dir / ".watcher-needed").exists():
                 result["watcher_needed"] = True
+            if (artifact_dir / ".watcher-expired").exists():
+                result["watcher_expired"] = True
             return result
         if time.monotonic() >= deadline:
             result = {"ok": True, "timed_out": True, **state}
             if (artifact_dir / ".watcher-needed").exists():
                 result["watcher_needed"] = True
+            if (artifact_dir / ".watcher-expired").exists():
+                result["watcher_expired"] = True
             return result
         time.sleep(interval)
 

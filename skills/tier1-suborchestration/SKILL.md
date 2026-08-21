@@ -219,7 +219,7 @@ readonly-kanban patch (see `docs/local-upstream-mods.md`) lets a
 CAN use `hermes kanban … watch` directly:
 
 ```
-delegate_task(background=true, goal="Run `hermes kanban --board <slug> watch --kinds review_requested,blocked --interval 2` for up to ~25 minutes (NO --assignee filter: tasks are often created without an assignee, so the filter would drop them). The INSTANT a matching event appears for a task_id in my set (I track my set's task_ids), report it: task_id, kind, title, and the PR link if review_requested. Ignore events for task_ids NOT in my set. If the window lapses with no matching event, exit quietly with 'no events'.")
+delegate_task(background=true, goal="Run `hermes kanban --board <slug> watch --kinds review_requested,blocked --interval 2` for up to ~25 minutes (NO --assignee filter: tasks are often created without an assignee, so the filter would drop them). The INSTANT a matching event appears for a task_id in my set (I track my set's task_ids), report it: task_id, kind, title, and the PR link if review_requested. Ignore events for task_ids NOT in my set. If the window lapses with no matching event, write the artifact-dir flag `touch ~/.hermes/tasks/t2-<task_id>/.watcher-expired` so the T1 knows to re-arm, then exit quietly with 'no events'.")
 ```
 
 **Fallback (if the local mod is ever lost after an `hermes update`):** poll
