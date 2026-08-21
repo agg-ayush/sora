@@ -144,7 +144,9 @@ class KanbanAutoHeartbeatTest(unittest.TestCase):
             out = claude_orchestrate._gate({"task_id": "t-gate"})
             self.assertTrue(out["ok"])
         hb_calls = [c for c in calls if c[:2] == ["hermes", "kanban"]]
-        self.assertEqual(len(hb_calls), 1)
+        # The gate makes 2 kanban calls: the heartbeat + the design-doc
+        # attachments check. Both are expected.
+        self.assertEqual(len(hb_calls), 2)
         self.assertIn("KB-77", hb_calls[0])
         self.assertIn("--board", hb_calls[0])
 

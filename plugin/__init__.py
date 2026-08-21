@@ -646,9 +646,17 @@ def _wait(args: dict) -> dict:
         _maybe_kanban_heartbeat(task_id)
         state = _session_state(task_id, tail, stall_seconds)
         if state["state"] in {"needs_input", "stalled", "done", "exited"}:
-            return {"ok": True, "timed_out": False, **state}
+            result = {"ok": True, "timed_out": False, **state}
+            # Surface a watcher-needed hint when the session is kanban-linked
+            # and no watcher flag has been consumed yet.
+            if state.get("outcome") and (artifact_dir / ".watcher-needed").exists():
+                result["watcher_needed"] = True
+            return result
         if time.monotonic() >= deadline:
-            return {"ok": True, "timed_out": True, **state}
+            result = {"ok": True, "timed_out": True, **state}
+            if (artifact_dir / ".watcher-needed").exists():
+                result["watcher_needed"] = True
+            return result
         time.sleep(interval)
 
 
@@ -986,7 +994,31 @@ def _gate(args: dict) -> dict:
     impl = _check_impl_complete(task_id)
     review = _coerce_verdict(args.get("review"), "not implemented (Tier-2)")
     tests = _coerce_verdict(args.get("tests"), "not implemented (Tier-2)")
-    passed = all(c["result"] == "pass" for c in (impl, review, tests) if c["result"] != "skipped")
+
+    # Design-doc gate: when the session is kanban-linked, verify a design doc
+    # is attached before allowing the implementation phase to pass. The T2
+    # skill's pitfall is "forgetting to attach the accepted design doc before
+    # Phase 2" — this makes it structural.
+    design_doc_ok = True
+    design_doc_note = ""
+    meta = _read_meta(task_id)
+    ktask = meta.get("kanban_task_id")
+    kboard = meta.get("kanban_board", "")
+    if ktask:
+        try:
+            cmd = ["hermes", "kanban", "attachments", ktask]
+            if kboard:
+                cmd += ["--board", kboard]
+            att = _run(cmd)
+            if att.returncode == 0:
+                attachments = att.stdout or ""
+                if "design" not in attachments.lower() and ".md" not in attachments:
+                    design_doc_ok = False
+                    design_doc_note = "no design doc attached — run `hermes kanban attach` before Phase 2"
+        except Exception:
+            pass  # attachment check is best-effort; don't block on a CLI failure
+
+    passed = all(c["result"] == "pass" for c in (impl, review, tests) if c["result"] != "skipped") and design_doc_ok
 
     return {
         "ok": True,
@@ -996,6 +1028,8 @@ def _gate(args: dict) -> dict:
         "tests": tests,
         "passed": passed,
         "doom_loop": doom_loop_active(task_id),
+        "design_doc_attached": design_doc_ok,
+        "design_doc_note": design_doc_note or None,
     }
 
 
