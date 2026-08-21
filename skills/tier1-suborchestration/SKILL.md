@@ -189,12 +189,13 @@ needs-design flag, nothing more.
 dashboard at `localhost:9119`." Do not print a text board.
 
 **THEN ARM THE WATCHER — mandatory, not optional.** A T2 with no watcher is a
-silent-failure risk (it can die mid-work and you'd never know). Arm the
-background watcher from the "Reacting to your T2s" section below as part of
-dispatch — same turn, right after the report. If a watcher is already armed
-for an earlier T2 in your set, it covers this one too (it watches the board,
-not a single task); only arm a new one if none is active. Then move on to the
-next issue — you are still warm.
+silent-failure risk (it can die mid-work and you'd never know). The spawn
+response includes `watcher_needed: true` when the session is kanban-linked —
+when you see it, arm the background watcher from the "Reacting to your T2s"
+section below as part of dispatch — same turn, right after the report. If a
+watcher is already armed for an earlier T2 in your set, it covers this one too
+(it watches the board, not a single task); only arm a new one if none is
+active. Then move on to the next issue — you are still warm.
 
 ## Staying warm across your task-set
 - The user feeds you tasks for YOUR set ("new issue: X — same component") → you

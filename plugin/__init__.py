@@ -320,6 +320,20 @@ def _start(args: dict) -> dict:
     # For claude: the prompt is passed as a CLI arg (safe for claude).
     if executor == "codex":
         _run(["sh", "-c", f"sleep 5 && tmux send-keys -t {shlex.quote(task_id)} -l {shlex.quote(full_prompt)} && sleep 1 && tmux send-keys -t {shlex.quote(task_id)} Enter"])
+        # Verify the brief actually submitted — a failed submit leaves the session
+        # idle at the prompt forever. Capture the pane after ~8s; if the prompt
+        # line is still visible (not consumed), re-send Enter.
+        time.sleep(8)
+        state = _session_state(task_id)
+        if state.get("state") == "working":
+            pass  # brief landed, session is working
+        else:
+            # Re-send Enter — the first submit didn't take
+            _run(["tmux", "send-keys", "-t", task_id, "Enter"])
+            time.sleep(3)
+            state = _session_state(task_id)
+            if state.get("state") != "working":
+                return {"ok": False, "error": f"brief submit failed: session is {state.get('state')}, not working. Check the tmux pane manually.", "task_id": task_id}
 
     # Full pane logging via pipe-pane crashes the git-bash/MSYS tmux server
     # (takes down ALL sessions). Only safe on real Linux/macOS tmux; on Windows
@@ -353,12 +367,32 @@ def _start(args: dict) -> dict:
             meta["kanban_board"] = kanban_board
     _write_text(artifact_dir / "meta.json", json.dumps(meta, indent=2))
 
+    # Auto-arm a background watcher for kanban-linked sessions: the T1 doesn't
+    # have to remember. The watcher is a delegate_task child that polls the
+    # kanban board for review_requested/blocked on this task. Bounded (~25 min)
+    # so it doesn't outlive the delegation timeout.
+    watcher_armed = False
+    if kanban_task and kanban_board:
+        try:
+            import json as _json
+            _ = _json  # ensure json is available in this scope
+            # The watcher is armed by the T1 (delegate_task is a Hermes tool,
+            # not callable from the plugin). Instead, write a flag file the T1's
+            # next turn reads to know it should arm the watcher. This is the
+            # closest we can get to deterministic without the plugin having
+            # access to delegate_task.
+            _write_text(artifact_dir / ".watcher-needed", kanban_task)
+            watcher_armed = True
+        except Exception:
+            pass
+
     return {
         "ok": True,
         "task_id": task_id,
         "session": task_id,
         "rundir": meta["rundir"],
         "artifact_dir": artifact_dir.as_posix(),
+        "watcher_needed": watcher_armed,
     }
 
 
