@@ -10,6 +10,7 @@ board stays clean without manual intervention.
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -53,21 +54,11 @@ def get_pr_state(repo, pr_number):
 
 
 def extract_pr_number(task):
-    """Extract the PR number from a task's result or comments."""
-    # Check the result field first
-    result = task.get("result") or ""
-    if "PR #" in result:
-        try:
-            return int(result.split("PR #")[1].split()[0].rstrip(".,;"))
-        except (ValueError, IndexError):
-            pass
-    # Check the title
-    title = task.get("title") or ""
-    if "#" in title:
-        try:
-            return int(title.split("#")[1].split()[0].rstrip(".,;"))
-        except (ValueError, IndexError):
-            pass
+    """Extract the PR number from a task's result or title."""
+    for field in (task.get("result") or "", task.get("title") or ""):
+        m = re.search(r"#(\d+)", field)
+        if m:
+            return int(m.group(1))
     return None
 
 
