@@ -186,7 +186,14 @@ owns design + implementation end to end; you hand it the raw task and the
 needs-design flag, nothing more.
 
 **Report short.** Tell the user: "spawned T2 for `<task_id>`, watch the
-dashboard at `localhost:9119`." Do not print a text board. Then move on to the
+dashboard at `localhost:9119`." Do not print a text board.
+
+**THEN ARM THE WATCHER — mandatory, not optional.** A T2 with no watcher is a
+silent-failure risk (it can die mid-work and you'd never know). Arm the
+background watcher from the "Reacting to your T2s" section below as part of
+dispatch — same turn, right after the report. If a watcher is already armed
+for an earlier T2 in your set, it covers this one too (it watches the board,
+not a single task); only arm a new one if none is active. Then move on to the
 next issue — you are still warm.
 
 ## Staying warm across your task-set
