@@ -62,10 +62,59 @@ def extract_pr_number(task):
     return None
 
 
+def get_merge_pending():
+    """Return [(task_dir, pr_number, repo)] for all .merge-pending flags."""
+    pending = []
+    tasks_dir = os.path.join(HOME, ".hermes", "tasks")
+    if not os.path.isdir(tasks_dir):
+        return pending
+    for task_dir in os.listdir(tasks_dir):
+        flag = os.path.join(tasks_dir, task_dir, ".merge-pending")
+        if os.path.isfile(flag):
+            try:
+                with open(flag) as f:
+                    data = json.load(f)
+                pr_num = data.get("pr_number")
+                repo = data.get("repo")
+                if pr_num and repo:
+                    pending.append((task_dir, pr_num, repo))
+            except (json.JSONDecodeError, OSError):
+                pass
+    return pending
+
+
 def main():
+    # Fast path: poll merge-pending flags first (T2 just set auto-merge on these)
+    for task_dir, pr_num, repo in get_merge_pending():
+        pr = get_pr_state(repo, pr_num)
+        if pr and pr.get("state") == "MERGED":
+            merge_sha = (pr.get("mergeCommit") or {}).get("oid", "")[:8]
+            # Find the task's board from meta.json
+            meta_path = os.path.join(HOME, ".hermes", "tasks", task_dir, "meta.json")
+            board = None
+            if os.path.isfile(meta_path):
+                try:
+                    with open(meta_path) as f:
+                        meta = json.load(f)
+                    board = meta.get("kanban_board")
+                except (json.JSONDecodeError, OSError):
+                    pass
+            if board:
+                task_id = task_dir.replace("t2-", "")
+                rc, out, err = sh(
+                    "hermes", "kanban", "--board", board, "complete", task_id,
+                    "--result", f"merged via PR #{pr_num} ({merge_sha})"
+                )
+                if rc == 0:
+                    print(f"auto-completed {task_id} on {board}: PR #{pr_num} merged ({merge_sha}) [merge-pending]")
+                    # Clear the flag
+                    os.unlink(os.path.join(HOME, ".hermes", "tasks", task_dir, ".merge-pending"))
+                else:
+                    print(f"failed to complete {task_id}: {err}", file=sys.stderr)
+
+    # Slow path: scan all review-state tasks across all boards
     boards = get_boards()
     if not boards:
-        print("no boards found", file=sys.stderr)
         return
 
     completed = 0

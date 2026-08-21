@@ -551,6 +551,13 @@ watch a local worktree.
    the repo has auto-merge disabled, `gh pr merge --auto` errors — fall back to a
    direct `gh pr merge` (same message) and poll for the merge to land.
 
+   **Write the merge-pending flag so the auto-complete cron picks it up fast:**
+   after setting auto-merge, write `~/.hermes/tasks/<task_id>/.merge-pending`
+   with `{"pr_number": <N>, "repo": "<org>/<repo>"}`. The cron polls these
+   flags first (fast path) and auto-completes the task the moment the merge
+   lands — no waiting for the next review-state scan. Clear the flag after
+   the merge is confirmed (or the cron clears it when it completes the task).
+
 ### Phase 5 — Cleanup
 1. Mark the task done. The task is in `review` (Phase 4 moved it there for the
    merge gate), and `hermes kanban complete` accepts review-state tasks. Use:
