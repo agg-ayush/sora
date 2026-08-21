@@ -352,6 +352,14 @@ Repeat until all units done or a stop condition fires:
      (capture pane+log), `stop`, treat as a failed run → fallback below.
      (Stall = no activity indicator in the pane AND no status change — a
      session showing a thinking/working spinner is NOT stalled.)
+   - **Wedged-child self-recovery (observed 3× in one workstream):** if your
+     `claude_orchestrate wait` has been open >10 min, do NOT keep waiting
+     blindly — check the child session's on-disk state directly:
+     `~/.hermes/tasks/<child-task>/result.md` and `outcome.md` presence. If
+     the child wrote `DONE`/completed minutes ago while your `wait` is still
+     open, the call is wedged, not working: interrupt the wait (C-c), read the
+     child's result/verdict files directly, and proceed from them. Never let a
+     completed child hold a supervisor hostage in a wait call.
    - **Fallback on failed/crashed/stalled claude run**: retry the SAME unit ONCE
      with `executor=codex`. The claim stays held (independent of the executor —
      principle #7). If codex also fails → ESCALATE.
@@ -429,6 +437,13 @@ back to Phase 2.
 **3.3 code review** (this skill fills the gate `review` slot) — primary path via
 the `pr-review-toolkit` `/pr-review-toolkit:review-pr` command in a **Claude Code
 session** (not the implementer session):
+
+0. **Scope the review to THIS PR's delta, always.** The review prompt must name
+   the exact commit range (`origin/<base>..HEAD` of the PR's branch) and instruct
+   the reviewer to read only that diff — never the cumulative stack diff, never
+   the whole component. On a stacked branch, the base is the previous stack
+   branch, not the trunk. Reviewing beyond the delta duplicates earlier rounds
+   and scales cost with stack size instead of change size.
 1. `claude_orchestrate start` a Claude Code session (`executor=claude`,
    `model_provider=fireworks` — Kimi K3; pass `kanban_task_id`/`kanban_board`
    as everywhere else, principle #2) in the
