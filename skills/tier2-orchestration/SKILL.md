@@ -628,6 +628,25 @@ rules for that agent; skip silently.
 `promote` rewrites the candidate files (idempotent — run after a batch of
 records to refresh counts).
 
+## Recording discovered work (out-of-scope findings)
+
+If you find a bug, missing test, or improvement while implementing that is
+NOT part of your current task's scope — per the no-scope-creep rule, fix
+your assigned task only, don't fold the extra work in. Record the finding as
+a **linked task**, not just a kanban comment (comments get buried; a link is
+queryable graph structure):
+
+```
+hermes kanban create "Fix <thing found>" --board <slug> --triage
+hermes kanban link <this_task_id> <new_task_id>
+```
+
+This makes the origin task the parent of the discovered one — `hermes kanban
+list --status triage` (or a T1 sweep) surfaces it later without anyone
+having to recall which task's comments to dig through. Do this at the moment
+you find it, not as a batch cleanup at the end — findings noted only in your
+head are lost when the session ends.
+
 ## Pitfalls
 - **A persistent T2 kept alive across multiple tasks does NOT self-close the
   task it's leaving.** Phase 5 (`complete` + `reclaim` + self-terminate) only
