@@ -629,6 +629,13 @@ rules for that agent; skip silently.
 records to refresh counts).
 
 ## Pitfalls
+- **A persistent T2 kept alive across multiple tasks does NOT self-close the
+  task it's leaving.** Phase 5 (`complete` + `reclaim` + self-terminate) only
+  fires when the session actually exits. If T1 (or you) steers a still-alive
+  T2 onto a new task instead of spawning a fresh one, the OLD task's Phase 5
+  never runs — it's on whoever reassigns the T2 to close the outgoing task
+  (`hermes kanban complete <old_task_id> --result "merged via PR #N"`) right
+  at reassignment time, not later.
 - **Block syntax gotcha (argparse ordering):** `--kind needs_input` must come
   BEFORE the task_id — `hermes kanban block --kind needs_input <task_id> <reason>`.
 - Pasting accumulated history or the design-doc body into dispatch prompts → use

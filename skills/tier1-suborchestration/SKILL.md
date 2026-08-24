@@ -267,6 +267,44 @@ merged, YOU close the task:
   task) before exiting — the norm is it exits in `review`, so expect to close it
   yourself.
 
+## Reusing a persistent T2 across multiple tasks
+
+Normally a T2 is one-per-issue and self-closes its kanban task in its own
+Phase 5 before terminating (see `tier2-orchestration`). If you deliberately
+keep ONE T2 alive across several tasks (staying warm to avoid cold context
+reload — a valid choice when tasks share a component and warm context saves
+real time), that self-close no longer happens for the task the T2 is LEAVING
+BEHIND — it doesn't exit, so Phase 5 never fires for the outgoing task.
+**You (T1), not the T2, must close the outgoing task** as part of the
+reassignment:
+
+1. Before or immediately after steering the persistent T2 onto task B, check
+   whether task A (what it was just doing) is actually finished (PR merged) —
+   `gh pr view <N> --json state,mergedAt`.
+2. If merged: `hermes kanban complete <task_A> --board <slug> --result
+   "merged via PR #N"` yourself, right then — don't wait for a later audit
+   to catch it.
+3. If task A died/was superseded by a fresh task_id (the T2 crashed mid-work
+   and you created a new task to resume it) — `archive` the stale original
+   rather than leaving it sitting in `ready` indefinitely.
+
+**Resolve dynamic values in YOUR OWN shell before building the steer text —
+never embed a `$(...)` command substitution inside a `tmux send-keys -l`
+string.** That text is typed literally into the target session's chat input;
+there's no shell between `send-keys` and the input box, so the substitution
+is NOT executed — the T2 receives the literal unexpanded string (e.g.
+`t_$(hermes kanban ...)`) and stalls trying to make sense of it. Run the
+lookup as your own terminal/tool call first, capture the plain resolved value
+(a task_id, PR number, SHA), then interpolate that value into the
+`send-keys -l` string.
+
+**Periodically audit your task-set for orphaned `ready`/`review` tasks** — a
+task whose T2 died and was respawned under a NEW task_id leaves the old one
+stranded forever if nobody closes it. Run `hermes kanban list --json --board
+<slug>` whenever the user asks about kanban health (or on your own cadence),
+and for every non-terminal task in your set, confirm it still maps to a live
+tmux session or an open PR; archive/complete anything that doesn't.
+
 ## Diagnosing a stuck task (board-side, no tmux needed)
 
 Before reaching for `tmux capture-pane`, read the board's own history — it
