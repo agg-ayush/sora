@@ -259,19 +259,11 @@ def check_autoupdate(problems: list[str]) -> None:
         problems.append(problem)
 
 
-def check_script_drift(problems: list[str], repo: str | None) -> None:
+def check_script_drift(problems: list[str], repo: str | None, exclude: list[str] | None = None) -> None:
     """Report installed scripts that no longer match the repo they came from.
 
-    Everything else this repo installs is symlinked, so it cannot disagree with
-    its source. Scripts cannot be: Hermes refuses to run a cron whose script
-    path resolves outside HERMES_HOME/scripts, and a link into the repo is
-    exactly the escape that guard exists to stop. So they are copied — and a
-    copy goes stale in silence.
-
-    That is not hypothetical here. `watch_ci_main.py` sat two days behind on
-    both machines, missing the change that points its own error messages at the
-    fix; the box running it every five minutes was running the old one, and
-    nothing said so. This is the check that would have said so.
+    Only flags scripts that ARE installed but stale — a repo script that isn't
+    installed at all is not drift, it might be a helper/hook/non-cron script.
     """
     if not repo:
         return
@@ -280,25 +272,20 @@ def check_script_drift(problems: list[str], repo: str | None) -> None:
         problems.append(f"script drift unchecked: no scripts dir at {source}")
         return
 
+    skip = set(exclude or [])
     installed_dir = HERMES_HOME / "scripts"
-    stale, missing = [], []
+    stale = []
     for src in sorted(source.glob("*.py")) + sorted(source.glob("*.sh")):
+        if src.name in skip:
+            continue
         installed = installed_dir / src.name
-        if not installed.exists():
-            missing.append(src.name)
-        elif installed.read_bytes() != src.read_bytes():
+        if installed.exists() and installed.read_bytes() != src.read_bytes():
             stale.append(src.name)
 
-    # Named individually: "3 scripts differ" sends you diffing all of them.
     if stale:
         problems.append(
             f"{len(stale)} installed script(s) differ from {source}: {', '.join(stale)}"
-            " — resync with scripts/install-assets.sh (--force to discard local edits)"
-        )
-    if missing:
-        problems.append(
-            f"{len(missing)} script(s) in the repo are not installed: {', '.join(missing)}"
-            " — run scripts/install-assets.sh"
+            " — resync with: cp <repo>/scripts/<file> ~/.hermes/scripts/"
         )
 
 
@@ -341,7 +328,7 @@ def main() -> int:
     check_gateway(problems)
     check_platforms(problems, ignore=cfg.get("ignore_platforms"))
     check_autoupdate(problems)
-    check_script_drift(problems, cfg.get("repo", str(Path.home() / "hermes-setup")))
+    check_script_drift(problems, cfg.get("repo", str(Path.home() / "hermes-setup")), exclude=cfg.get("drift_exclude"))
     if expect:
         check_jobs(problems, expect, _platform.last_wake(), suppressed)
     else:
