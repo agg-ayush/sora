@@ -1,0 +1,6 @@
+{
+  "expect": ["orphan-reaper", "hermes-hygiene", "auth-canary", "dead-supervisor-alert"],
+  "channel": "telegram:<chat-id>",
+  "notify": true,
+  "repo": "/Users/ayush/hermes-tier-setup"
+}
