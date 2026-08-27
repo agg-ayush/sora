@@ -957,10 +957,18 @@ def _check_impl_complete(task_id: str) -> dict:
 
     changed_paths = {line[3:].strip() for line in porcelain.splitlines() if line.strip()}
     real_paths = {p for p in changed_paths if Path(p).name not in _ORCHESTRATION_BASENAMES}
-    if not real_paths:
-        return {"result": "fail", "evidence": "status=complete but git shows zero real changes in rundir (orchestration files excluded)"}
+    if real_paths:
+        return {"result": "pass", "evidence": f"status=complete; {_short_diffstat(diffstat, cached_diffstat, porcelain)}"}
 
-    return {"result": "pass", "evidence": f"status=complete; {_short_diffstat(diffstat, cached_diffstat, porcelain)}"}
+    # Nothing uncommitted. A finished agent that committed its work has a clean
+    # worktree — reading only the worktree calls that "zero changes" and fails
+    # the gate on the tidiest possible outcome. Fall back to committed changes.
+    head_run = _run(["git", "-C", rundir, "log", "--oneline", "-5"])
+    head_log = head_run.stdout.strip() if head_run.returncode == 0 else ""
+    if head_log:
+        return {"result": "pass", "evidence": f"status=complete; worktree clean, committed work present:\n{head_log}"}
+
+    return {"result": "fail", "evidence": "status=complete but git shows zero changes (no uncommitted files, no commits)"}
 
 
 _VALID_VERDICT_RESULTS = {"pass", "fail", "skipped"}

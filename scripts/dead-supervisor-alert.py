@@ -91,7 +91,7 @@ def scan(db_path: Path, stale_cut: int) -> list[dict]:
     a silence, so degrading to "no findings" on a schema change would reproduce
     the exact failure it is meant to catch.
     """
-    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    con = sqlite3.connect(f"file:{db_path}?mode=ro&immutable=1", uri=True)
     try:
         con.row_factory = sqlite3.Row
         rows = con.execute(

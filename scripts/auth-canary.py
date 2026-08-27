@@ -78,6 +78,9 @@ def main() -> int:
     # Watermark dedup: while the outage persists we alert once per window
     # rollover (the id key is the hour bucket), not every cron tick. When the
     # outage clears, nothing is emitted and the next outage alerts fresh.
+    # Follows the shared watermark contract: first run is a silent baseline,
+    # so deploy during an active outage won't fire — the next window's bucket
+    # will be new and alert then.
     wm = Watermark.load("auth-canary")
     findings = []
     if dead:
