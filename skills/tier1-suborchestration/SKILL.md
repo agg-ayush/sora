@@ -103,6 +103,9 @@ Do NOT proceed without a resolved board.
 5. **Report via the dashboard, not text boards.** Tell the user to watch the
    dashboard at `localhost:9119` (native Hermes dashboard, kanban tab). Replies
    are short.
+6. **Parallelise reads, serialise writes.** You may dispatch multiple T2s freely
+   as long as no two write to the same worktree, branch, file, or kanban task.
+   Reading the same repo from many sessions is always safe.
 
 ## Inputs
 - A task description (from Tier 0, or hand-fed) + the target repo/component.

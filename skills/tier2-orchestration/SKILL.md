@@ -124,6 +124,10 @@ available as long as Hermes is running.
     Do NOT start a 4th round. A blocking issue that reflects genuine ambiguity in
     the TASK itself (not the doc) → ESCALATE for clarification, don't spin another
     round.
+13. **Deny-guard protects every spawned session.** `~/.hermes/scripts/deny-guard.sh`
+    is wired into every `claude_orchestrate start` as a PreToolUse hook. It blocks
+    destructive commands (rm -rf, git reset --hard, etc.) in T3 sessions. Never
+    disable or bypass it.
 
 ## Inputs
 
@@ -438,7 +442,9 @@ back to Phase 2.
 the `pr-review-toolkit` `/pr-review-toolkit:review-pr` command in a **Claude Code
 session** (not the implementer session):
 
-0. **Scope the review to THIS PR's delta, always.** The review prompt must name
+0. **Scope the review to THIS PR's delta, always.** Compute the review base with
+   `git merge-base origin/<parent-branch> HEAD` so the range covers only this
+   branch's own commits. The review prompt must name
    the exact commit range (`origin/<base>..HEAD` of the PR's branch) and instruct
    the reviewer to read only that diff — never the cumulative stack diff, never
    the whole component. On a stacked branch, the base is the previous stack
@@ -521,12 +527,12 @@ watch a local worktree.
    - **Notify the human that a PR is ready for review** (the kanban notifier fires
      on `completed`/`blocked` but NOT `review`, so send a direct ping):
      ```
-     hermes send -t telegram:<chat-id> -q "PR ready for review: <task title> — <PR url>"
+     hermes send -t telegram "PR ready for review: <task title> — <PR url>"
      ```
      Do this once per PR, right after moving to `review`. Also subscribe the task so
      `blocked`/`completed` events auto-ping Telegram:
      ```
-     hermes kanban notify-subscribe <task_id> --platform telegram --chat-id <chat-id>
+     hermes kanban notify-subscribe <task_id> --platform telegram
      ```
 5. The human reviews and approves on the PR (GitHub approval). On approval they can
    either `hermes kanban unblock <task_id>` (if you'd blocked) or the review status
@@ -561,7 +567,9 @@ watch a local worktree.
 ### Phase 5 — Cleanup
 1. Mark the task done. The task is in `review` (Phase 4 moved it there for the
    merge gate), and `hermes kanban complete` accepts review-state tasks. Use:
-   `hermes kanban complete <task_id> --result "merged via PR #N"`.
+   `hermes kanban complete <task_id> --result "merged via PR #N" --summary "<2-3 sentence handoff: what changed, key decisions>" --metadata '{"changed_files": [...], "pr": <N>}'`.
+   The `--summary` and `--metadata` feed `hermes kanban context` so downstream
+   tasks and the T1 dispatcher can see what was done without opening the PR.
 2. `hermes kanban reclaim <task_id>` — release the claim (do this BEFORE
    self-terminating so the claim doesn't linger until TTL expiry).
 3. Prune the task artifact dir (avoid unbounded growth). Only remove worktrees
