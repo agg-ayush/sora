@@ -198,7 +198,7 @@ TRANSIENT_PLATFORM_STATES = {"connecting", "retrying"}
 TRANSIENT_GRACE = timedelta(minutes=15)
 
 
-def check_platforms(problems: list[str]) -> None:
+def check_platforms(problems: list[str], ignore: list[str] | None = None) -> None:
     """Catch a running gateway whose messaging adapter is dead.
 
     This exists because that combination is invisible from outside: on
@@ -224,8 +224,11 @@ def check_platforms(problems: list[str]) -> None:
         # enabled), so this is not a fault on its own.
         return
 
+    skip = set(ignore or [])
     now = datetime.now().astimezone()
     for name, info in sorted(platforms.items()):
+        if name in skip:
+            continue
         if not isinstance(info, dict):
             continue
         st = (info.get("state") or "unknown").lower()
@@ -336,7 +339,7 @@ def main() -> int:
     stamp = datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M:%S")
 
     check_gateway(problems)
-    check_platforms(problems)
+    check_platforms(problems, ignore=cfg.get("ignore_platforms"))
     check_autoupdate(problems)
     check_script_drift(problems, cfg.get("repo", str(Path.home() / "hermes-setup")))
     if expect:
