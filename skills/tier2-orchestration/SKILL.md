@@ -734,6 +734,21 @@ you find it, not as a batch cleanup at the end — findings noted only in your
 head are lost when the session ends.
 
 ## Pitfalls
+- **A fix that lands as commits on OTHER PRs' branches (not its own) loses
+  traceability unless you deliberately restore it.** This happens when issue X's
+  fix is a genuine blocking prerequisite for smoke-testing issues Y and Z (e.g.
+  a dangling-path bug both Y's and Z's branches share), so the cleanest
+  mechanical fix is applying it directly on Y's and Z's branches rather than
+  extracting a third branch and reverting it back out of Y/Z. Left as plain
+  commits, issue X now has no PR that visibly resolves it and a reviewer of
+  Y or Z has no signal that X's fix rides along in their diff — "if it pushed
+  to 31 and 32 no one will know we fixed it." Fix: amend the commit(s) on each
+  affected branch to carry a `Fixes #X` trailer, and reopen issue X (it
+  auto-closes when either PR merges, and GitHub's PR view shows the trailer
+  inline so a reviewer sees X was addressed in THIS diff). Don't silently fold
+  a blocking fix into a dependent branch without this — always ask whether the
+  issue should stay separately visible before choosing the folded-in mechanical
+  fix over a standalone PR.
 - **A persistent T2 kept alive across multiple tasks does NOT self-close the
   task it's leaving.** Phase 5 (`complete` + `reclaim` + self-terminate) only
   fires when the session actually exits. If T1 (or you) steers a still-alive
@@ -754,3 +769,29 @@ head are lost when the session ends.
 - Forgetting to attach the accepted design doc (`hermes kanban attach` + verify
   with `hermes kanban attachments`) before Phase 2 → the implementation loop reads
   the doc from the attachment.
+- **Brief-driven (no-kanban) T2 flows sharing ONE repo checkout across concurrent
+  issues → branch collisions.** When a T2 works directly against a repo path
+  (via terminal `git checkout -b`/`commit`, not a `claude_orchestrate` worktree)
+  and another T2 is simultaneously working a DIFFERENT issue in the SAME repo
+  path, either side's `git checkout <other-branch>` silently switches the shared
+  working tree out from under the other session — `git status` then shows the
+  wrong branch's uncommitted files mixed in as if they were yours (observed:
+  session A's `render-dossier.ts` WIP appeared in session B's `git status` after
+  session A checked out its branch in the shared tree). Before every `git add`/
+  `git commit`, re-check `git branch --show-current` matches what you expect and
+  diff the staged files against exactly what YOU touched — never `git add -A`
+  blind in a shared checkout. If the tree has been switched, `git stash` isn't
+  safe either (competes with the other session); instead identify exactly which
+  paths are yours (`git diff --name-only` against your own last known commit) and
+  stage only those. Prefer an isolated `git worktree add` per issue any time two
+  T2s might run against the same repo concurrently — this is what Phase 2's
+  `worktree=<name>` already does for `claude_orchestrate` sessions; extend the
+  same isolation to ad-hoc terminal-driven git work in a brief-driven flow, don't
+  work directly in a shared primary checkout.
+- **Verify against the committed branch, not the live working tree, once a
+  shared checkout may have moved.** After push, run verification (build/test/
+  ad-hoc content checks) via `git show <branch>:<path>` (or a worktree checked
+  out to that branch) rather than reading files straight off disk — the shared
+  tree can be pointed at a different branch by a concurrent session by the time
+  you get to verification, and a check against the wrong branch's files reports
+  false failures that look like your own change regressed.
