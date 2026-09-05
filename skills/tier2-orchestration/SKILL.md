@@ -588,6 +588,38 @@ watch a local worktree.
    lands — no waiting for the next review-state scan. Clear the flag after
    the merge is confirmed (or the cron clears it when it completes the task).
 
+### Rework after a post-hoc "over-built" rejection
+Distinct from the Phase 1b design-review cap (which bounds rounds BEFORE
+implementation). This is triggered when a human/reviewer rejects the SHIPPED
+approach as overengineered after a PR is already up (e.g. a `steer-<task>.txt`
+brief arriving after Phase 4) — a scope correction on live code, not a 4th design
+round. The rejection itself usually specifies the minimal mechanism to keep, so a
+fresh Kimi-author + Codex-reviewer design loop is unneeded overhead; author the
+minimal rework directly (read_file/patch) against the rejection's own spec.
+1. **Split out any separable, correct, pre-existing sub-fix bundled into the
+   over-built PR into its OWN branch/PR first.** Diff precisely against the true
+   base (`git diff`/`git show` on individual hunks, not a bulk cherry-pick) so
+   only that isolated change + its own tests carry over — none of the abandoned
+   design's other churn or incidental rewording. Verify the result is exactly
+   `base + the isolated hunk` before pushing (e.g. `git diff origin/main -- <file>`
+   shows only the intended lines).
+2. **Reset the original PR branch to `origin/<base>` and rebuild the minimal
+   version directly.** For a small, concretely-specified simplification, hand-author
+   via `read_file`/`patch` rather than spinning a new design-author/review round —
+   reserve the full Phase 1b loop for genuinely underspecified redesigns.
+3. **Update the PR title AND body** (`gh pr edit --title ... --body-file -`, per
+   `pr-description-style`) to describe the NEW minimal mechanism. Never leave an
+   over-built PR's original description in place after a rework — it no longer
+   matches the diff and misleads the human reviewer.
+4. **Run one fresh independent code-review round** (Codex/Sol, `claude_orchestrate`)
+   against the reworked diff (`origin/<base>...HEAD`) before treating it as ready.
+   A smaller diff is not itself proof of correctness — get an actual approved
+   verdict on the NEW diff, same as any other Phase 3.3 review.
+5. **Re-verify with real test execution against the new diff**, not the prior
+   PR revision's green CI — the mechanism changed, so its own test run must be
+   fresh (baseline + branch, per 3.2), even if the old PR had already gone green
+   once.
+
 ### Phase 5 — Cleanup
 1. Mark the task done. The task is in `review` (Phase 4 moved it there for the
    merge gate), and `hermes kanban complete` accepts review-state tasks. Use:
