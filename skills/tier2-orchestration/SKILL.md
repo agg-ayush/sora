@@ -511,6 +511,28 @@ session** (not the implementer session):
    CRITICAL/HIGH the same, and note in the gate comment that review ran via the
    kimi-k3 fallback, not pr-review-toolkit.
 
+**3.2b live-model check for prompt/labeling changes (mandatory when applicable).**
+If the unit's core change is a MODEL PROMPT or a model-assigned label/classification
+(e.g. a judge/verifier prompt instructed to tag its own output with a new field),
+fixture-fed unit tests are NOT sufficient evidence, no matter how green — they only
+prove the gate logic handles pre-labeled data correctly, never that the model
+actually produces sensible labels under the new prompt. Run the changed step LIVE
+against a real (or realistic replayed) input at least once, with real spend
+authorized, and read its actual output before calling the gate passed:
+1. Seed a real run dir with genuine upstream inputs (a prior real run's artifacts,
+   not synthetic fixtures).
+2. Invoke ONLY the changed step with the real model executor (not the fake/mocked
+   executor the unit suite uses).
+3. Read the produced artifact directly and judge whether the labels/output are
+   SENSIBLE against the task's intent — not just schema-valid.
+4. Feed that real output through the gate/aggregation logic to confirm the
+   downstream behavior is correct on real data, not just synthetic probes.
+This is a distinct, additional check from 3.2/3.3 — do not treat "unit tests
+green" as proof a prompt actually works. (Observed: an abstain-gate fix's tests
+all passed against hand-built fixtures; only a live verifier run against a real
+candidate's drafts confirmed the model's `kind` labels actually landed on the
+correct side of the candidate-facing/internal split.)
+
 **3.4 adversarial QA** (optional, HIGH-RISK changes only — NOT YET BUILT, skip
 unless the change touches auth/security/migration paths or is a large diff).
 

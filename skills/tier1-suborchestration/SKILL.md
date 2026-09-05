@@ -331,6 +331,18 @@ resume` clears it. Prefer this over killing tmux sessions when you need the line
 stopped (killing loses in-flight work; pause doesn't).
 
 ## Pitfalls
+- **"Skip-to-build" (no design needed) is NOT "skip T2."** Triaging a task as
+  small/well-scoped only decides whether T2 runs its design phase — it never
+  means bypassing T2 itself. Observed failure: two issues were correctly
+  triaged as well-defined one-file bug fixes, then dispatched via bare
+  `delegate_task`/direct Claude Code sessions instead of spawning T2 tmux
+  supervisors, because "they're simple enough" felt like justification to skip
+  the supervisor layer too. It isn't — T2 owns the exit gate (impl-complete +
+  tests + code review), the PR raise/description, and the merge-approval stop,
+  none of which a bare coding dispatch provides. If you catch yourself calling
+  `delegate_task` or launching a coding agent directly for ANY code change —
+  even a one-line, obviously-simple fix — STOP: that belongs to Phase 2
+  (spawn T2), not to you.
 - **Block syntax gotcha (argparse ordering):** `--kind needs_input` must come
   BEFORE the task_id — `hermes kanban block --kind needs_input <task_id> <reason>`.
 - Gold-plating a trivial build task with a needs-design flag → triage honestly.
