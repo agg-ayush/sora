@@ -47,6 +47,18 @@ rely on the sticky active board; resolution procedure per the
 your handoff brief). No health-check curl, no daemon — kanban is always
 available as long as Hermes is running.
 
+**No-kanban fallback (brief-driven, not a default).** A board may simply not
+exist for this repo yet (never initialized). If the handoff brief explicitly
+authorizes proceeding without kanban when unavailable, do so rather than
+stopping to create one: skip claim/heartbeat/ledger-attach/comment calls
+entirely, track unit progress via the plugin's own on-disk state
+(`~/.hermes/tasks/<task_id>/status.md` / `outcome.md`) and `git log`/`git
+status` directly, and report final status (design rounds used, gate results,
+PR link, any process hiccups) in your own final message instead of a kanban
+comment trail. Do NOT silently fall back on your own initiative when the brief
+is silent on it — if it doesn't say what to do when kanban is unavailable,
+STOP and ask, same as any other unstated-in-brief ambiguity.
+
 ## Core principles (non-negotiable)
 
 1. **Read state first, then act.** Never track loop position in your own memory.
@@ -417,6 +429,18 @@ back to Phase 2.
    - **If the repo has CI, verify it green before declaring the gate passed:**
      after pushing, `gh pr checks <pr>` must show all checks passing; a red CI
      check is a gate failure even if your local run was green.
+   - **CI runs checks your local suite doesn't cover (Semgrep, other static/security
+     scanners) — this shows up only AFTER the PR is opened, not during 3.2/3.3.**
+     Once the PR is up, re-poll `gh pr checks <pr>` (Phase 4) even after gate 3.2/3.3
+     passed; a scanner failure reopens the gate. Get the finding detail via
+     `gh api repos/<org>/<repo>/commits/<sha>/check-runs` then
+     `gh api repos/<org>/<repo>/check-runs/<id>/annotations` (the `gh pr checks`
+     summary line has no file/line detail). Dispatch a normal fix session (same
+     worktree/branch) with the exact rule id + file + line from the annotation and
+     the concrete hardening asked for (e.g. a Semgrep
+     `prototype-pollution-loop` hit on dynamic property/index access wants
+     `Object.prototype.hasOwnProperty.call` + a `__proto__`/`prototype`/`constructor`
+     denylist, not a suppression comment) — re-run tests, push, re-poll checks.
 3. On failure, capture `BEFORE_SHA = git rev-parse HEAD` in the worktree, then
    `delegate_task` a test-fixer (kimi-k3). Its goal:
    run the suite and fix ONLY small mechanical failures (missing dependency,
