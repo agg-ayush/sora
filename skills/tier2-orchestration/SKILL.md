@@ -769,6 +769,20 @@ head are lost when the session ends.
 - Forgetting to attach the accepted design doc (`hermes kanban attach` + verify
   with `hermes kanban attachments`) before Phase 2 → the implementation loop reads
   the doc from the attachment.
+- **`claude_orchestrate wait` can itself throw (observed: `NameError` referencing
+  an internal `artifact_dir` var, on every call for the affected session) —
+  distinct from the session being stalled/stuck.** When `wait` errors instead of
+  returning a state, don't retry `wait` in a loop; fall back to polling the
+  session's on-disk state directly (`status.md` / `outcome.md` under
+  `~/.hermes/tasks/<task_id>/`, same files principle #1 already treats as the
+  durable source of truth) until it reads `complete`/`DONE`.
+- **A design author/revise session (`effort=high`) can die silently (exit with no
+  outcome) on a revision turn, reproducibly, while the same prompt at
+  `effort=medium` completes cleanly.** Observed twice in one Phase 1b.2 revise
+  loop. If a design session dies with no outcome at `effort=high`, retry the SAME
+  revision prompt once at `effort=medium` before treating it as a stalled/crashed
+  session requiring the codex fallback (principle #7) — cheaper first try than
+  switching engines.
 - **Brief-driven (no-kanban) T2 flows sharing ONE repo checkout across concurrent
   issues → branch collisions.** When a T2 works directly against a repo path
   (via terminal `git checkout -b`/`commit`, not a `claude_orchestrate` worktree)
