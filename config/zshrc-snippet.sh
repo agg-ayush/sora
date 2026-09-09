@@ -9,9 +9,9 @@
 #   holo 2 -q "issue ..."  # Tier-2 one-shot
 holo() {
   case "$1" in
-    1) shift; hermes -s tier1-suborchestration "$@" ;;
-    2) shift; hermes -s tier2-orchestration "$@" ;;
+    1) shift; hermes -s tier1-suborchestration -m glm53f "$@" ;;
+    2) shift; hermes -s tier2-orchestration -m glm53f "$@" ;;
     dash) shift; hermes dashboard "$@" ;;
-    *) hermes -s tier1-suborchestration "$@" ;;
+    *) hermes -s tier1-suborchestration -m glm53f "$@" ;;
   esac
 }
