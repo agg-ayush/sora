@@ -136,6 +136,15 @@ Do NOT proceed without a resolved board.
      author→review loop first, then implement.
    - When genuinely unsure, prefer needs-design — a cheap design pass beats an
      expensive wrong build. But do not gold-plate a trivial task with ceremony.
+   - **This user (Ayush) has explicitly overridden skip-to-build triage before**
+     on tasks the agent judged "well-specified, no ambiguity" (a bash
+     provisioning script, a wrapper scaffold, an invite service, an eval
+     adapter) with "dont skip to build, i dont want anything to be broken
+     later." For production-facing infra (not a throwaway spike), default to
+     **needs-design=yes** even when the task reads as simple/mechanical —
+     only skip-to-build for genuinely trivial one-file/config tweaks. If in
+     doubt whether a task counts as "production-facing," ask rather than
+     assume skip-to-build.
    - **A visual/UX mockup is NOT a technical design — never skip-to-build just
      because a mockup exists.** "Design" here means the *implementation* design
      (architecture, approach, which components/contracts/files change, edge cases),
