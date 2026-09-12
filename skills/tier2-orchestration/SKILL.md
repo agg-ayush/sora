@@ -734,6 +734,7 @@ you find it, not as a batch cleanup at the end — findings noted only in your
 head are lost when the session ends.
 
 ## Pitfalls
+- **Implementation sessions tend to bundle adjacent-but-unassigned functionality into the diff — audit the diff against the task's stated scope before Phase 4, don't just check the gate.** Observed: a task to build a "JSONL→markdown transcript adapter" also implemented an unrequested Google-Drive fetch/unpack/workflow-wiring step, roughly tripling the PR's size and duplicating logic that may already exist elsewhere in the pipeline (the user caught it only from the PR size: "why is this which is basically a transcription converter that big?"). Before opening/updating the PR, diff the actual changes against the task description — if the diff does something the task never asked for, split it into a separate task/PR (or drop it) rather than folding it in as "while I was there." This matters most when the user has pre-delegated merge trust (e.g. "assume I'm okay with these as long as comments aren't too verbose") — the PR won't get a manual scope read from them, so the scope check has to happen here, before the PR goes up.
 - **A fix that lands as commits on OTHER PRs' branches (not its own) loses
   traceability unless you deliberately restore it.** This happens when issue X's
   fix is a genuine blocking prerequisite for smoke-testing issues Y and Z (e.g.

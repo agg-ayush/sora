@@ -340,6 +340,7 @@ resume` clears it. Prefer this over killing tmux sessions when you need the line
 stopped (killing loses in-flight work; pause doesn't).
 
 ## Pitfalls
+- **A task in your set may actually belong on a DIFFERENT repo than the one your board is bound to — verify before triage, don't default to "my repo."** T1 is bound to one board/repo, but a task the user hands you (especially anything that extends or overlaps an existing legacy system) can have its real home elsewhere. Observed failure: an invite/scheduling task was triaged and dispatched against the T1's own bound repo because that's where the board lived, when the work actually belonged on a separate pre-existing automation repo that already owned that domain (the user caught it only after a PR was already up: "wait 66 shouldnt be on cn-hr-automation" / "we can change the code on cn-hr-automation"). Before creating the kanban task, if the task's subject matter plausibly already lives in another repo (an existing automation, an adjacent service, "the old system that does X"), ask the user which repo it targets rather than assuming your bound repo. Getting this wrong costs a full T2 design+build cycle and a PR that has to be closed and redone.
 - **"Skip-to-build" (no design needed) is NOT "skip T2."** Triaging a task as
   small/well-scoped only decides whether T2 runs its design phase — it never
   means bypassing T2 itself. Observed failure: two issues were correctly
