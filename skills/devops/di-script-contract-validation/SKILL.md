@@ -33,7 +33,7 @@ against the real parser.
 
 **Read the contract and parser before touching any script:**
 - Contract: `docs/brainlifts/scripts/inputs/contract.md` in the content repo
-  (`/Users/ayush/Trilogy/content`) — the authored-syntax rules (`[SAY]`,
+  (`~/Trilogy/content`) — the authored-syntax rules (`[SAY]`,
   `[TEXT tN]`, `[VISUAL vN]`, `[INTERACTION type]`, `[Stage n]`, pause tags).
 - **There is more than one parser in this repo — do not assume which one is
   the live gate.** Two have been seen so far:
@@ -53,7 +53,7 @@ against the real parser.
 - **`stages/ingest/src/parser.py` needs Python 3.12+** (nested same-quote
   f-strings on the violation-message lines). The sandbox/system `python3` may
   be older (seen: 3.9). Find and use the content repo's own venv instead,
-  e.g. `/Users/ayush/Trilogy/content/venv/bin/python` — check
+  e.g. `~/Trilogy/content/venv/bin/python` — check
   `venv/bin/python --version` before assuming it's new enough.
 
 ## How the parser resolves a marker (read this before writing fixes)

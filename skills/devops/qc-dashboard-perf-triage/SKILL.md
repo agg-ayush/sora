@@ -22,7 +22,7 @@ resource-constrained" questions on that host.
 ## Access
 
 ```bash
-ssh -i /Users/ayush/Trilogy/docs/keys/qc-dashboard-key.pem -o StrictHostKeyChecking=no ubuntu@<qc-host-ip> "<cmd>"
+ssh -i ~/Trilogy/docs/keys/qc-dashboard-key.pem -o StrictHostKeyChecking=no ubuntu@<qc-host-ip> "<cmd>"
 ```
 
 Container name: `qc-dashboard` (docker). Exec into it with

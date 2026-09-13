@@ -825,7 +825,7 @@ head are lost when the session ends.
   for design sessions):
   ```python
   import json, pathlib
-  wt = "/Users/ayush/Trilogy/.orchestrate-worktrees/<branch>"  # the rundir
+  wt = "~/Trilogy/.orchestrate-worktrees/<branch>"  # the rundir
   cfg = pathlib.Path.home()/".hermes"/"claude-k3-config"/".claude.json"
   d = json.loads(cfg.read_text())
   d.setdefault("projects", {}).setdefault(wt, {})["hasTrustDialogAccepted"] = True
