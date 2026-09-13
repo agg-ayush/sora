@@ -83,16 +83,20 @@ kanban:
 #  proactive_prune_tokens: 48000        # prune tool output early, before threshold
 #  idle_compact_after_seconds: 1800     # auto-compact after 30min idle
 
-# Hooks — subagent_stop fires after every delegate_task child finishes; the
-# ledger hook appends the outcome to ~/.hermes/tier_orchestrator/subagent_ledger.jsonl.
-# Script lives at scripts/subagent-ledger-hook.py in this repo.
+# Hooks — Hermes hooks live in ~/.hermes/agent-hooks/ (NOT ~/.hermes/scripts/).
+# subagent_stop fires after every delegate_task child finishes; the ledger hook
+# appends the outcome to ~/.hermes/tier_orchestrator/subagent_ledger.jsonl.
+# Scripts live in this repo under scripts/; symlink them into ~/.hermes/agent-hooks/
+# (devbox/setup-hermes.sh wires the symlinks). Available hooks:
+#   scripts/subagent-ledger-hook.py   → subagent_stop → delegation ledger
+#   scripts/aws-token-refresh-hook.sh → post_tool_call → auto saml2aws refresh on expired AWS token
 #hooks:
 #  post_tool_call:
 #    - command: ~/.hermes/agent-hooks/aws-token-refresh.sh
 #      matcher: ^terminal$
 #      timeout: 10
 #  subagent_stop:
-#    - command: ~/.hermes/scripts/subagent-ledger-hook.py
+#    - command: ~/.hermes/agent-hooks/subagent-ledger.py
 #      timeout: 5
 
 # Delegation: subagents auto-approve their tool actions (no silent auto-deny
