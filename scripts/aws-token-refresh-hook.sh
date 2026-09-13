@@ -17,7 +17,7 @@ if printf '%s' "$out" | grep -qiE 'ExpiredToken|InvalidToken|token.*expired|SSO.
     printf '{"context":"AWS token expired; saml2aws refresh already running in tmux (session saml2aws-refresh). Retry the command in ~15s."}\n'
     exit 0
   fi
-  /Users/ayush/.hermes/scripts/aws-creds-refresh.sh >/dev/null 2>&1 &
+  "$HOME/.hermes/scripts/aws-creds-refresh.sh" >/dev/null 2>&1 &
   printf '{"context":"AWS token expired. saml2aws refresh started in background (tmux session saml2aws-refresh); new creds land in ~/.aws/credentials [default]. Wait ~10-15s then retry the failed command."}\n'
   exit 0
 fi
