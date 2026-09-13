@@ -68,3 +68,34 @@ sets: "passed on baseline but failed on branch" = regressions (must fix);
 --force` the baseline after. This is the rigorous version of the skill's
 "baseline first" rule when DB-dependent tests are involved.
 -->
+<!-- LESSON: repeated rebase conflicts on a slow-moving main.
+When a PR sits open while main keeps landing batches (a security remediation
+wave, sibling PRs), expect to be asked to rebase more than once and to hit
+conflicts in the SAME files each time. Resolution pattern that works: for each
+conflicted file, read both sides first (`git log --oneline main -- <file>` or
+the conflict hunk itself) to see WHAT each side added, then keep both by
+merging import lists and both describe/test blocks rather than picking one
+side. Verify the merge structurally before running anything: grep-count that
+each branch's marker (an import name, a `describe("...")` block) appears
+exactly once — catches a dropped or duplicated block before wasting a test run
+on it. Only after that, run tsc/lint/full-suite, then a focused run of just the
+conflicted test file to confirm both branches' suites pass. After each
+force-push, `mergeStateStatus` goes UNKNOWN for several seconds before GitHub
+recomputes it — poll (`gh pr view --json mergeable,mergeStateStatus`) until it
+settles to MERGEABLE/CLEAN rather than reporting UNKNOWN as a problem.
+-->
+<!-- LESSON: ad-hoc verification script for conflict-resolution edits.
+When a gate demands fresh verification evidence for a specific edit (not just
+"suite is green"), write a temp script (`mktemp -t hermes-verify-XXXXXX.sh`)
+that: (1) greps for leftover `<<<<<<<`/`=======`/`>>>>>>>` markers in exactly
+the files touched by the resolution; (2) greps that each side's import AND at
+least one use-site of that import are present (an import with no use-site
+means the merge kept the name but dropped the usage); (3) runs the project's
+CANONICAL test/lint commands read from `package.json` `scripts.test` /
+`scripts.lint` (don't guess `npm test` vs `vitest run` vs a monorepo script —
+read the actual script string first); (4) runs a focused test invocation on
+just the conflicted file and confirms 0 failed; (5) confirms local HEAD ==
+`origin/<branch>` so the evidence is against what's actually pushed. Delete
+the script and any temp log files after. This satisfies "fresh evidence" gates
+without re-litigating the whole suite from scratch every time.
+-->

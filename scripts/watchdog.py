@@ -329,7 +329,7 @@ def main() -> int:
     check_platforms(problems, ignore=cfg.get("ignore_platforms"))
     if cfg.get("check_autoupdate", False):
         check_autoupdate(problems)
-    check_script_drift(problems, cfg.get("repo", str(Path.home() / "hermes-setup")), exclude=cfg.get("drift_exclude"))
+    check_script_drift(problems, cfg.get("repo", str(Path.home() / "hermes-tier-setup")), exclude=cfg.get("drift_exclude"))
     if expect:
         check_jobs(problems, expect, _platform.last_wake(), suppressed)
     else:
