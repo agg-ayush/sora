@@ -7,6 +7,10 @@ model:
   provider: fireworks
   reasoning_effort: high
   max_tokens: 128000
+  aliases:
+    k3: fireworks/accounts/fireworks/models/kimi-k3
+    glm53: fireworks/accounts/fireworks/models/glm-5p3
+    glm53f: fireworks/accounts/fireworks/models/glm-5p3-flash
 
 # Provider config — hermes's own model calls authenticate via TRUEFOUNDRY_API_KEY.
 # (The claude/codex CLI subprocesses use TFY_API_KEY for TF-routed models, or
@@ -15,6 +19,17 @@ providers:
   truefoundry:
     api: https://<llm-gateway>.truefoundry.cloud/api/llm/api/inference/openai/v1
     api_key: ${TRUEFOUNDRY_API_KEY}
+
+fallback_providers:
+  - model: fireworks-group/glm-5p2
+    provider: truefoundry
+    reasoning_effort: high
+  - model: claude-opus-4-8
+    provider: truefoundry
+
+agent:
+  max_turns: 200
+  verify_on_stop: auto
 
 display:
   # TUI is the default; tier sessions MUST use --cli to override this
@@ -51,11 +66,20 @@ kanban:
 #  memory_query_rewrite:
 #    model: claude-group/claude-haiku-4-5
 #    provider: truefoundry
+#  background_review:
+#    provider: custom
+#    model: claude-group/claude-sonnet-5
+#    base_url: https://<llm-gateway>.truefoundry.cloud/api/llm/api/inference/openai/v1
+#    api_key: ${TRUEFOUNDRY_API_KEY}
 
 # Compression knobs — proactive pruning + idle auto-compact so long tier
 # sessions don't hit the context wall.
 #compression:
 #  enabled: true
+#  threshold: 0.9
+#  target_ratio: 0.2
+#  tail_mode: legacy
+#  protect_last_n: 20
 #  proactive_prune_tokens: 48000        # prune tool output early, before threshold
 #  idle_compact_after_seconds: 1800     # auto-compact after 30min idle
 
@@ -63,6 +87,10 @@ kanban:
 # ledger hook appends the outcome to ~/.hermes/tier_orchestrator/subagent_ledger.jsonl.
 # Script lives at scripts/subagent-ledger-hook.py in this repo.
 #hooks:
+#  post_tool_call:
+#    - command: ~/.hermes/agent-hooks/aws-token-refresh.sh
+#      matcher: ^terminal$
+#      timeout: 10
 #  subagent_stop:
 #    - command: ~/.hermes/scripts/subagent-ledger-hook.py
 #      timeout: 5
@@ -72,4 +100,34 @@ kanban:
 # when a tool needs it. Tier safeguards (deny-guard on T3, no-commit-to-main
 # hooks) still bind them.
 delegation:
+  model: accounts/fireworks/models/kimi-k3
+  provider: fireworks
+  max_concurrent_children: 5
+  max_spawn_depth: 4
+  child_timeout_seconds: 1800
   subagent_auto_approve: true
+
+# MCP servers — skeleton only; tokens live in ~/.hermes/.env and are NOT
+# committed here.
+#mcp_servers:
+#  supabase:
+#    url: https://mcp.supabase.com/mcp
+#    enabled: true
+#  ticoons:
+#    url: https://<internal-host>/api/v1/mcp
+#    enabled: true
+#  recall:
+#    url: https://ap-northeast-1.recall.ai/mcp
+#    enabled: true
+#  vercel:
+#    url: https://mcp.vercel.com
+#    enabled: true
+#  aws-knowledge:
+#    url: https://knowledge-mcp.global.api.aws
+#    enabled: true
+#  deepwiki:
+#    url: https://mcp.deepwiki.com/mcp
+#    enabled: true
+#  context7:
+#    url: https://mcp.context7.com/mcp
+#    enabled: true
