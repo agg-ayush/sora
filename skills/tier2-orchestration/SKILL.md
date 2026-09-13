@@ -810,3 +810,30 @@ head are lost when the session ends.
   tree can be pointed at a different branch by a concurrent session by the time
   you get to verification, and a check against the wrong branch's files reports
   false failures that look like your own change regressed.
+- **The Fireworks/K3 path pre-seeds onboarding but NOT per-directory workspace
+  trust — a session launched in a fresh worktree (or scratch dir) hangs on the
+  first-run \"Is this a project you trust?\" TUI menu and exits with
+  `outcome=null`, which looks identical to a silent crash.** Text `steer` cannot
+  navigate that menu (it needs arrow-key + Enter, not typed text), so the session
+  dies. The plugin (`~/.hermes/plugins/claude-orchestrate/__init__.py`, fireworks
+  branch) sets `hasCompletedOnboarding` and approves the API key in
+  `~/.hermes/claude-k3-config/.claude.json`, but trust is stored per-directory as
+  `projects[<abs-path>].hasTrustDialogAccepted = true` in that same file — it is
+  NOT pre-seeded for the run dir. Fix BEFORE `start`: pre-seed trust for the exact
+  path the session will `cd` into (the worktree path =
+  `<workdir>.parent/.orchestrate-worktrees/<worktree-name>`, or the scratch dir
+  for design sessions):
+  ```python
+  import json, pathlib
+  wt = "/Users/ayush/Trilogy/.orchestrate-worktrees/<branch>"  # the rundir
+  cfg = pathlib.Path.home()/".hermes"/"claude-k3-config"/".claude.json"
+  d = json.loads(cfg.read_text())
+  d.setdefault("projects", {}).setdefault(wt, {})["hasTrustDialogAccepted"] = True
+  cfg.write_text(json.dumps(d, indent=2))
+  ```
+  Then `start` runs straight past the dialog. Distinguish this from a real crash:
+  a trust-gated exit shows the \"trust this folder?\" menu in the pane (`status`
+  tail) at exit time; a true crash shows a working/thinking pane then disappears.
+  This is NOT an auth failure — Fireworks routing is up (claude launched and
+  connected); probe auth by checking whether the menu appeared, not by assuming
+  the null outcome means auth is down.

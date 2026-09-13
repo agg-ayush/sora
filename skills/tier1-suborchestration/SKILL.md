@@ -204,10 +204,10 @@ dashboard at `localhost:9119`." Do not print a text board.
 silent-failure risk (it can die mid-work and you'd never know). The spawn
 response includes `watcher_needed: true` when the session is kanban-linked —
 when you see it, arm the background watcher from the "Reacting to your T2s"
-section below as part of dispatch — same turn, right after the report. If a
-watcher is already armed for an earlier T2 in your set, it covers this one too
-(it watches the board, not a single task); only arm a new one if none is
-active. Then move on to the next issue — you are still warm.
+section below as part of dispatch — same turn, right after the report. The
+watcher self-chains on quiet windows, so you only need to arm it once per
+task-set — it stays alive until all T2s finish. Then move on to the next
+issue — you are still warm.
 
 ## Staying warm across your task-set
 - The user feeds you tasks for YOUR set ("new issue: X — same component") → you
@@ -231,7 +231,7 @@ readonly-kanban patch (see `docs/local-upstream-mods.md`) lets a
 CAN use `hermes kanban … watch` directly:
 
 ```
-delegate_task(background=true, goal="Run `hermes kanban --board <slug> watch --kinds review_requested,blocked --interval 2` for up to ~25 minutes (NO --assignee filter: tasks are often created without an assignee, so the filter would drop them). The INSTANT a matching event appears for a task_id in my set (I track my set's task_ids), report it: task_id, kind, title, and the PR link if review_requested. Ignore events for task_ids NOT in my set. If the window lapses with no matching event, write the artifact-dir flag `touch ~/.hermes/tasks/t2-<task_id>/.watcher-expired` so the T1 knows to re-arm, then exit quietly with 'no events'.")
+delegate_task(background=true, goal="Run `hermes kanban --board <slug> watch --kinds review_requested,blocked --interval 2` for up to ~25 minutes (NO --assignee filter: tasks are often created without an assignee, so the filter would drop them). The INSTANT a matching event appears for a task_id in my set (I track my set's task_ids), report it: task_id, kind, title, and the PR link if review_requested. Ignore events for task_ids NOT in my set. If the window lapses with no matching event, do NOT exit — instead, immediately re-arm yourself by spawning a fresh delegate_task with this exact same goal text (self-chain). Only exit quietly with 'no events' if the T1 has no outstanding T2s left (check via `hermes kanban --board <slug> list --status running`). If all T2s are done, exit without chaining.")
 ```
 
 **Fallback (if the local mod is ever lost after an `hermes update`):** poll
@@ -244,14 +244,12 @@ github.com PR URL, or 'blocked'/'needs input'; confirm the PR number with
 When the subagent finishes, its result is injected back into THIS session as a
 new turn automatically (no polling, no blocking your main loop). On `PR up`:
 tell the user the PR number/link, ask for merge approval. On `blocked`: surface
-what it needs. On "no events": re-arm a fresh watcher if T2s are still
-outstanding.
+what it needs. On "no events, re-arming": nothing to do — the watcher already
+chained a fresh one. On "no events, all done": all T2s finished, no re-arm needed.
 
 Rules:
-- **Bounded, not infinite** — keep the watch window under the delegation timeout
-  (30 min default). A quiet window ends the watcher; re-arm on the injected turn.
-- **One watcher at a time** — don't stack them; if one's already armed, wait for
-  its turn to come back before re-arming.
+- **Bounded window, self-chaining** — each watcher runs ~25 min. On a quiet window it re-arms itself by chaining a fresh `delegate_task` before exiting. The chain only stops when no T2s are left running on the board. You never need to manually re-arm.
+- **One watcher chain at a time** — don't stack chains; if one's already armed, its self-chain keeps it alive. Only arm a new one if no watcher chain exists.
 - This is how you stay responsive AND keep working — never block your own turn
   on a watch. The watcher's kanban access is read-only (mutation trust boundary
   intact — see `docs/local-upstream-mods.md`).
@@ -341,18 +339,28 @@ stopped (killing loses in-flight work; pause doesn't).
 
 ## Pitfalls
 - **A task in your set may actually belong on a DIFFERENT repo than the one your board is bound to — verify before triage, don't default to "my repo."** T1 is bound to one board/repo, but a task the user hands you (especially anything that extends or overlaps an existing legacy system) can have its real home elsewhere. Observed failure: an invite/scheduling task was triaged and dispatched against the T1's own bound repo because that's where the board lived, when the work actually belonged on a separate pre-existing automation repo that already owned that domain (the user caught it only after a PR was already up: "wait 66 shouldnt be on cn-hr-automation" / "we can change the code on cn-hr-automation"). Before creating the kanban task, if the task's subject matter plausibly already lives in another repo (an existing automation, an adjacent service, "the old system that does X"), ask the user which repo it targets rather than assuming your bound repo. Getting this wrong costs a full T2 design+build cycle and a PR that has to be closed and redone.
-- **"Skip-to-build" (no design needed) is NOT "skip T2."** Triaging a task as
-  small/well-scoped only decides whether T2 runs its design phase — it never
-  means bypassing T2 itself. Observed failure: two issues were correctly
-  triaged as well-defined one-file bug fixes, then dispatched via bare
-  `delegate_task`/direct Claude Code sessions instead of spawning T2 tmux
-  supervisors, because "they're simple enough" felt like justification to skip
-  the supervisor layer too. It isn't — T2 owns the exit gate (impl-complete +
-  tests + code review), the PR raise/description, and the merge-approval stop,
-  none of which a bare coding dispatch provides. If you catch yourself calling
-  `delegate_task` or launching a coding agent directly for ANY code change —
-  even a one-line, obviously-simple fix — STOP: that belongs to Phase 2
-  (spawn T2), not to you.
+- **"Skip-to-build" (no design needed) is NOT "skip T2" — and it is NOT
+  "skip T2 by patching it yourself either."** Triaging a task as small/
+  well-scoped only decides whether T2 runs its design phase — it never means
+  bypassing T2 itself, and it never means YOU (the orchestrator) hand-editing
+  the code with your own `patch`/`write_file`/`terminal` tools during ad hoc
+  debugging or manual verification, even for a one-line, obviously-simple fix
+  you spotted while clicking through the app. Observed failure: two issues
+  were correctly triaged as well-defined one-file bug fixes, then dispatched
+  via bare `delegate_task`/direct Claude Code sessions instead of spawning T2
+  tmux supervisors, because "they're simple enough" felt like justification to
+  skip the supervisor layer too. It isn't — T2 owns the exit gate
+  (impl-complete + tests + code review), the PR raise/description, and the
+  merge-approval stop, none of which a bare coding dispatch OR a direct
+  self-patch provides. The user's explicit correction after catching this
+  mid-session: "dont try and fix code by yourself, only if it is a small env
+  bug or something all code related tasks go to t2." The line: environment/
+  config edits (env vars, `.env.local` values, local test fixtures/session
+  data you set up purely to exercise the app locally) are fine to touch
+  directly — CODE changes (source files that ship) always go to a filed task
+  + T2, no exceptions for size. If you catch yourself about to `patch` a
+  source file yourself — even to verify a hunch — STOP: file it as a kanban
+  task and dispatch T2 instead.
 - **Block syntax gotcha (argparse ordering):** `--kind needs_input` must come
   BEFORE the task_id — `hermes kanban block --kind needs_input <task_id> <reason>`.
 - Gold-plating a trivial build task with a needs-design flag → triage honestly.
