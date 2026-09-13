@@ -663,15 +663,22 @@ scope.)
 
 ## Escalate to a human when
 - BLOCKED because the plan/design is fundamentally wrong.
-- Design review not approved after the 3rd round (send latest doc + outstanding
-  blocking issues; do NOT start a 4th round).
+- Design review not approved after the 3rd round (design non-convergence — send
+  latest doc + outstanding blocking issues; do NOT start a 4th round).
 - A design blocking issue reflects genuine ambiguity in the TASK itself (not the
   doc) → human clarification needed before another design round.
+- Missing access you cannot resolve yourself — a credential, permission, or
+  environment gap that blocks implementation or the gate.
 - Both Claude and Codex engines unavailable for the design-author step.
-- Implementation loop or test-fix loop hits max iterations (stuck).
+- Implementation loop or test-fix loop hits max iterations (test failures that
+  stay red after the bounded fix loops in Phase 3.2).
 - A review finding conflicts with plan text (human decides which governs).
 - The gate cannot pass after retries.
 - Always, for the merge decision.
+
+Dispatcher-level calls (which repo a task belongs to, whether a task is even
+well-formed enough to triage, cross-repo scope) are NOT yours — surface those
+back to T1 rather than deciding them here.
 
 ## Error journal wiring (auto-promoted lessons)
 
