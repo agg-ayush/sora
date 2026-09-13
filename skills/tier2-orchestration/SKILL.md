@@ -155,6 +155,7 @@ STOP and ask, same as any other unstated-in-brief ambiguity.
 ## Procedure
 
 ### Phase 1 — Setup + resume check
+`claude_orchestrate action=set_phase task_id=<task_id> phase=1` — record that you're in setup. Then:
 1. `hermes kanban claim <task_id>` — atomically claim the issue. If another T2
    holds it, the claim fails (STOP — don't fight it). If resuming and the claim
    has expired, re-claim here.
@@ -189,6 +190,7 @@ STOP and ask, same as any other unstated-in-brief ambiguity.
 
 ### Phase 1b — Design author + design review (only when needs-design AND no
 attached doc)
+`claude_orchestrate action=set_phase task_id=<task_id> phase=1b` — record that you're in design. Then:
 T2 OWNS this loop. Design touches no repo — author and review sessions run in a
 SCRATCH DIR (NOT the target repo, NO worktree). The author session reads the
 target repo to ground the design; it does not write to it.
@@ -270,6 +272,7 @@ target repo to ground the design; it does not write to it.
    attachment (path from `hermes kanban attachments <task_id>`).
 
 ### Phase 2 — Implementation loop
+`claude_orchestrate action=set_phase task_id=<task_id> phase=2` — record that you're implementing. Then:
 The design doc now comes from Phase 1b (T2-authored + reviewed) OR was handed in
 attached to the kanban task. Either way, read its path from
 `hermes kanban attachments <task_id>` and point implementation sessions at the
@@ -385,6 +388,7 @@ Repeat until all units done or a stop condition fires:
    "unit N/M complete"` to keep the claim alive.
 
 ### Phase 3 — Exit gate
+`claude_orchestrate action=set_phase task_id=<task_id> phase=3` — required before the gate call below. The plugin refuses to gate in earlier phases. Then:
 Run all three checks; the task passes only if impl+tests+review all pass.
 **Tests and review run in PARALLEL** (per the redesign) — kick off both
 simultaneously since they inspect the same diff independently. However, if tests
@@ -541,6 +545,7 @@ summary>"` (impl pass/fail, tests pass/fail, review approved/needs_fixes, rounds
 used, any fallback notes).
 
 ### Phase 4 — Raise PR + human approval
+`claude_orchestrate action=set_phase task_id=<task_id> phase=4` — record that you're raising the PR. Then:
 The review/approval surface is a **real GitHub PR**, not the local diff. Keep the
 PR (and its description) as the living source of truth; do not ask the human to
 watch a local worktree.
@@ -571,14 +576,17 @@ watch a local worktree.
      you genuinely need the human's INPUT/decision to proceed (an ambiguity, a
      credential, a design call) — that's a different signal than "ready for review."
    - **Notify the human that a PR is ready for review** (the kanban notifier fires
-     on `completed`/`blocked` but NOT `review`, so send a direct ping):
+     on `completed`/`blocked` but NOT `review`, so send a direct ping). `hermes
+     send -t telegram "<msg>"` alone errors `No home channel set for telegram` —
+     the channel must be the literal chat-id, not the bare platform name:
      ```
-     hermes send -t telegram "PR ready for review: <task title> — <PR url>"
+     hermes send -t telegram:<chat-id> "PR ready for review: <task title> — <PR url>"
      ```
      Do this once per PR, right after moving to `review`. Also subscribe the task so
-     `blocked`/`completed` events auto-ping Telegram:
+     `blocked`/`completed` events auto-ping Telegram — `--chat-id` is a required
+     flag, not implied by `--platform`:
      ```
-     hermes kanban notify-subscribe <task_id> --platform telegram
+     hermes kanban notify-subscribe <task_id> --platform telegram --chat-id <chat-id>
      ```
 5. The human reviews and approves on the PR (GitHub approval). On approval they can
    either `hermes kanban unblock <task_id>` (if you'd blocked) or the review status
@@ -643,6 +651,7 @@ minimal rework directly (read_file/patch) against the rejection's own spec.
    once.
 
 ### Phase 5 — Cleanup
+`claude_orchestrate action=set_phase task_id=<task_id> phase=5` — record that you're cleaning up. Then:
 1. Mark the task done. The task is in `review` (Phase 4 moved it there for the
    merge gate), and `hermes kanban complete` accepts review-state tasks. Use:
    `hermes kanban complete <task_id> --result "merged via PR #N" --summary "<2-3 sentence handoff: what changed, key decisions>" --metadata '{"changed_files": [...], "pr": <N>}'`.

@@ -353,6 +353,7 @@ def _start(args: dict) -> dict:
         "effort": effort,
         "model_provider": model_provider if executor == "claude" else None,
         "created_at": time.time(),
+        "phase": "1",  # T2 lifecycle: 1 (setup) → 1b (design, optional) → 2 (implement) → 3 (gate) → 4 (PR) → 5 (cleanup)
     }
     # Optional kanban linkage: when the T2 supervisor passes the kanban task this
     # session serves, long blocking plugin calls (wait/gate) auto-heartbeat the
@@ -992,10 +993,38 @@ def _coerce_verdict(raw: Any, default_evidence: str) -> dict:
     return {"result": result, "evidence": str(raw.get("evidence") or "")}
 
 
+_PHASE_ORDER = ["1", "1b", "2", "3", "4", "5"]
+
+def _set_phase(args: dict) -> dict:
+    task_id = str(args.get("task_id") or "").strip()
+    phase = str(args.get("phase") or "").strip()
+    if not task_id or not phase:
+        return {"ok": False, "error": "task_id and phase are required"}
+    if phase not in _PHASE_ORDER:
+        return {"ok": False, "error": f"invalid phase {phase!r} (must be one of {_PHASE_ORDER})"}
+    meta = _read_meta(task_id)
+    if not meta:
+        return {"ok": False, "error": f"no task {task_id!r}"}
+    current = meta.get("phase", "1")
+    current_idx = _PHASE_ORDER.index(current) if current in _PHASE_ORDER else 0
+    target_idx = _PHASE_ORDER.index(phase)
+    if target_idx < current_idx:
+        return {"ok": False, "error": f"cannot go backwards: current phase is {current}, requested {phase}"}
+    meta["phase"] = phase
+    meta[f"phase_{phase}_entered_at"] = time.time()
+    _write_text(_artifact_dir(task_id) / "meta.json", json.dumps(meta, indent=2))
+    return {"ok": True, "task_id": task_id, "phase": phase, "previous": current}
+
 def _gate(args: dict) -> dict:
     task_id = str(args.get("task_id") or "").strip()
     if not task_id:
         return {"ok": False, "error": "task_id is required"}
+
+    # Phase gate: refuse to run the exit gate if the session hasn't been advanced to Phase 3.
+    meta = _read_meta(task_id)
+    current_phase = meta.get("phase", "1")
+    if current_phase not in ("3", "4", "5"):
+        return {"ok": False, "error": f"gate called in phase {current_phase} — advance to phase 3 first via `claude_orchestrate action=set_phase task_id={task_id} phase=3`", "phase": current_phase}
 
     # The gate runs at the end of a long supervised turn — heartbeat the kanban
     # claim (if linked) so the claim is fresh when the supervisor next comments
@@ -1064,6 +1093,7 @@ _ACTIONS = {
     "list": _list,
     "recover": _recover,
     "gate": _gate,
+    "set_phase": _set_phase,
     "clean": _clean,
     "check_diff": _check_diff,
 }
@@ -1105,7 +1135,7 @@ CLAUDE_ORCHESTRATE_SCHEMA = {
                 ),
                 "enum": [
                     "start", "status", "wait", "steer", "result", "stop", "list",
-                    "recover", "gate", "clean", "check_diff", "interrupt", "diagnose",
+                    "recover", "gate", "set_phase", "clean", "check_diff", "interrupt", "diagnose",
                 ],
             },
             "task_id": {"type": "string", "description": "tmux session name / artifact dir name"},
@@ -1169,6 +1199,11 @@ CLAUDE_ORCHESTRATE_SCHEMA = {
                 ),
             },
             "message": {"type": "string", "description": "Text to send into the session (steer)"},
+            "phase": {
+                "type": "string",
+                "enum": ["1", "1b", "2", "3", "4", "5"],
+                "description": "Advance the task lifecycle phase (set_phase). Phases: 1=setup, 1b=design, 2=implement, 3=gate, 4=PR, 5=cleanup.",
+            },
             "keep_worktree": {
                 "type": "boolean",
                 "description": "Keep the worktree on disk after stop (default true)",
