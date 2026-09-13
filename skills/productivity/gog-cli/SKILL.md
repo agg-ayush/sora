@@ -1,6 +1,6 @@
 ---
 name: gog-cli
-description: "Create/read/edit Google Docs, Drive, Sheets, Gmail, and Calendar via the `gog` CLI — the authenticated tool of choice in this environment, preferred over the bundled google-workspace (gws) skill for quick Docs/Drive/Sheets work."
+description: Manage Google Docs, Drive, Sheets, and Gmail via gog CLI.
 version: 1.0.0
 metadata:
   hermes:

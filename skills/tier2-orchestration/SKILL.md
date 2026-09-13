@@ -1,6 +1,6 @@
 ---
 name: tier2-orchestration
-description: "Drive a single coding issue from a raw task to a human-approved GitHub PR merge as a Tier-2 supervisor owning BOTH design and implementation. Use when orchestrating autonomous coding work: (design) author a design doc via a Kimi K3 session (Fireworks, high effort), cross-engine review it via a Codex/Sol session (3-round cap); (implement) assign the accepted design to a CLI coding agent in an isolated worktree, keep it working with stall detection, run an exit gate (impl-complete + pr-review-toolkit code review + separate-model test-fix), then raise a GitHub PR (keeping its description current as the review surface) and stop at human approval/merge on the PR. Sequences the claude_orchestrate tool (Claude Code / Codex sessions), a delegate_task test-fixer, gh for PRs, and kanban (issue tracking + claim lock + blocks + design-doc attachment)."
+description: Supervise one coding issue from raw task to approved PR.
 version: 0.3.0
 author: Hermes Agent
 license: MIT

@@ -1,6 +1,6 @@
 ---
 name: qc-dashboard-perf-triage
-description: "Triage 'the deployed lesson agent is slower / behaves differently than local' reports on the alpha-learn QC dashboard Lightsail box, AND audit Drive-sync correctness bugs (reverted edits/renders, stale artifacts shipped) on the same box. Covers the SSH access pattern, the ordered checklist (box resources -> container -> model routing -> Drive sync), the known aggressive Drive push/pull architecture that is the most common root cause for both slowness and silent reverts, and why a Windows+Drive-mount migration is not a clean fix. Use whenever asked to investigate agent slowness, tool-call cadence drops, resource/latency questions, or a lesson shipping with a stale/reverted artifact on the qc-dashboard box."
+description: Triage slowness and Drive-sync bugs on the QC dashboard box.
 version: 1.0.0
 author: Hermes Agent
 license: MIT

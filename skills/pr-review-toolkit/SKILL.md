@@ -1,6 +1,6 @@
 ---
 name: pr-review-toolkit
-description: Use when reviewing a PR's changes in a worktree via the Claude Code pr-review-toolkit plugin. Runs specialist reviewers (code-reviewer, silent-failure-hunter, comment-analyzer, pr-test-analyzer, type-design-analyzer, state-transition-reviewer) against the diff and writes a structured verdict. This is a Claude Code plugin — invoke it via a Claude Code session, not a Hermes session.
+description: Run pr-review-toolkit specialist reviewers on a PR diff.
 version: 1.0.0
 author: Hermes Agent
 license: MIT

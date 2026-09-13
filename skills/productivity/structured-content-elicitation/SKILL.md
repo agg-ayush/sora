@@ -1,6 +1,6 @@
 ---
 name: structured-content-elicitation
-description: "Gather content section-by-section for personal/narrative deliverables (decks, docs, reports) instead of drafting it all upfront."
+description: Gather content section-by-section for narrative content.
 ---
 
 # Structured Content Elicitation

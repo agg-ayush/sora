@@ -1,6 +1,6 @@
 ---
 name: serena-mcp
-description: "Wire Serena (LSP-backed semantic code navigation MCP server) into Hermes via hermes mcp add."
+description: Wire the Serena LSP-backed MCP server into Hermes.
 version: 1.0.0
 author: Ayush + Hermes Agent
 license: MIT
@@ -34,7 +34,7 @@ overhead isn't worth it there.
 
 Skip for: greenfield projects, tiny scripts, doc-only work.
 
-## Prerequisites (already satisfied on Ayush's Mac)
+## Prerequisites
 
 - **`uvx`** — bundled with Hermes at `~/.hermes/bin/uvx` (uv 0.11.x). No separate
   install. If not on PATH, prefix with the full path: `~/.hermes/bin/uvx`.
@@ -165,7 +165,7 @@ tool-discovery validation, so prefer `hermes mcp add`.
 - **mcp SDK missing on a fresh box** → MCP silently disabled. Install `mcp` into
   Hermes' venv (see Prerequisites), not system python.
 
-## Verified
+## Verification
 
 Setup verified live end-to-end on macOS: `hermes mcp add serena --command uvx
 --args ... --context ide --project-from-cwd` connected, discovered 24 tools, saved

@@ -1,6 +1,6 @@
 ---
 name: pr-description-style
-description: "Write collaborator-facing PR descriptions: relevant context + before/after behavior, no internal workflow narrative."
+description: Write clear, collaborator-facing PR descriptions.
 version: 1.0.0
 author: Hermes Agent
 license: MIT

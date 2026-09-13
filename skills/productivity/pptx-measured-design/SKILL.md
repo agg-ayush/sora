@@ -1,6 +1,6 @@
 ---
 name: pptx-measured-design
-description: Build designed .pptx decks whose text provably fits — measure every text box against the real font file before placing it, then verify the rendered PDF. Use when asked for a PowerPoint/pptx/deck/slides that must look designed (not a template bullet dump), when porting an approved HTML mockup to pptx, or when a generated deck has overflowing/clipped/misaligned text.
+description: Build .pptx decks with text measured against the real font.
 ---
 
 # Measured pptx design

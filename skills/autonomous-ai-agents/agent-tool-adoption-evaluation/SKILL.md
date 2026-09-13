@@ -1,6 +1,6 @@
 ---
 name: agent-tool-adoption-evaluation
-description: "Evaluate a third-party AI-agent/orchestration tool (e.g. beads, amux, a new CLI coding agent) for adoption into an existing multi-agent architecture — full adoption, borrowing one pattern, or skip. Use whenever asked to research 'other tools like X', assess whether something 'replaces our arch', or decide if a tool's advertised feature (dashboard, watchdog, tracker) is worth wiring in. Covers the research→evaluate→verify methodology and the specific trap of documenting a tool's claimed capability as working before actually testing it against the real system."
+description: Evaluate third-party agent tools for adoption or skip.
 version: 1.0.0
 author: Hermes Agent
 license: MIT

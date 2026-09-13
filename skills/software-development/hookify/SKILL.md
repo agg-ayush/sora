@@ -1,6 +1,6 @@
 ---
 name: hookify
-description: "Turn a plain-English rule into a working Hermes shell-hook (config entry + script)."
+description: Turn a plain-English rule into a Hermes shell-hook.
 version: 1.0.0
 author: Ayush + Hermes Agent
 license: MIT
@@ -251,7 +251,7 @@ printf '{}\n'
 - **Fail-open**: a broken hook never blocks the agent. If a block isn't firing, run
   `hermes hooks test` — the script probably printed bad JSON or exited nonzero.
 
-## Verified
+## Verification
 
 Event list pulled from `hermes_cli/plugins.py::VALID_HOOKS`; schema, wire protocol,
 consent model, and CLI from Hermes' shell-hooks docs. Recipes follow the documented

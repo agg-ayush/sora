@@ -1,6 +1,6 @@
 ---
 name: mockup-review-iteration
-description: "Live-served HTML mockup review: serve once, revise round by round on numbered feedback, keep diffs surgical."
+description: Serve and revise HTML mockups round by round on feedback.
 version: 1.0.0
 author: Hermes Agent
 license: MIT
@@ -241,7 +241,7 @@ When the user flags wasted space in a mockup that should fill a fixed host box (
 
 ### 9. After an external edit (Claude Code, another process) lands on a live-served mockup, a blank/broken-looking reload is more likely stale cache than a broken edit — verify before diagnosing
 
-When you `browser_navigate` back to a mockup URL right after a coding CLI finishes editing it and the page comes back empty (`document.body.children.length === 0`, no expected elements in the snapshot, or a `browser_console` eval throws `Cannot read properties of null`), don't jump straight to "the edit broke the file." Check in this order:
+When you `browser_exec` back to a mockup URL right after a coding CLI finishes editing it and the page comes back empty (`document.body.children.length === 0`, no expected elements in the snapshot, or a `browser_console` eval throws `Cannot read properties of null`), don't jump straight to "the edit broke the file." Check in this order:
 
 1. **Selector-independent sanity probe first**: `document.body.children.length` — a null-property error usually means you evaluated against a selector (`#overlay`) that doesn't match the current markup (`.overlay`), not that the DOM is actually empty.
 2. **Hard-reload with a cache-busting query param** (`?v=2`) — a `python3 -m http.server` + open browser tab combo can serve/hold a stale (sometimes empty) response across a file save that landed mid-request.

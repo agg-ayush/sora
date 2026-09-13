@@ -1,6 +1,6 @@
 ---
 name: tier1-suborchestration
-description: "Drive a task-set/component sub-orchestrator (Tier 1): a STATELESS DISPATCHER that owns a bounded set of related tasks (a feature arc, a component's issues, a workstream the user handed it) — NEVER the whole board or repo — triages each task from its DESCRIPTION ALONE (never reads source code), and hands off the raw task to the Tier-2 supervisor — which now owns design authoring/review AND implementation. State and tracking live in the kanban board (hermes kanban); watch progress on the native Hermes dashboard, not text boards."
+description: Dispatch a bounded task-set as a Tier-1 sub-orchestrator.
 version: 0.3.0
 author: Hermes Agent
 license: MIT
