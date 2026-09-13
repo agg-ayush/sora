@@ -8,10 +8,11 @@ else reclaims:
     sessions the orphan-reaper kills, so they accumulate unbounded.
   * ``hermes sessions optimize-storage`` — VACUUM + FTS rebuild. Session
     auto-archive soft-hides rows but never shrinks the file.
-  * ``hermes doctor``            — surfaces WAL/disk/dependency problems.
+  * ``hermes doctor --fix``       — surfaces WAL/disk/dependency problems and
+    auto-fixes what it can (TCC anchor, WAL checkpoint, etc.).
 
 Designed for a ``no_agent`` cron: prints ONLY when something was reclaimed or
-doctor found an issue; silent otherwise.
+doctor found an actionable issue; silent otherwise.
 
 Thresholds are deliberately conservative — this deletes derived artifacts
 (checkpoints, index pages), never session history.
@@ -28,6 +29,37 @@ from pathlib import Path
 # Only VACUUM when the DB has grown past this — the rebuild is expensive.
 VACUUM_ABOVE_MB = 750
 STATE_DB = Path.home() / ".hermes" / "state.db"
+STATE_DB_WAL = Path.home() / ".hermes" / "state.db-wal"
+
+# Doctor warnings we explicitly do NOT care about (not actionable for our setup).
+IGNORED_DOCTOR_PATTERNS: list[str] = [
+    # OAuth providers we never use
+    "Nous Portal auth",
+    "OpenAI Codex auth",
+    "MiniMax OAuth",
+    "xAI OAuth",
+    # Optional tools we do not use
+    "docker not found",
+    # WhatsApp bridge was dropped
+    "WhatsApp bridge deps",
+    # Tool-availability warnings for tools we do not configure
+    "a2a (system dependency not met)",
+    "browser (system dependency not met)",
+    "browser-cdp (system dependency not met)",
+    "computer_use (system dependency not met)",
+    "discord (missing DISCORD_BOT_TOKEN)",
+    "discord_admin (missing DISCORD_BOT_TOKEN)",
+    "feishu_doc (system dependency not met)",
+    "feishu_drive (system dependency not met)",
+    "hermes-yuanbao (system dependency not met)",
+    "homeassistant (system dependency not met)",
+    "image_gen (system dependency not met)",
+    "video_gen (system dependency not met)",
+    "x_search (missing XAI_API_KEY)",
+    # API connectivity warnings we do not act on
+    "OpenRouter API (not configured)",
+    "AWS Bedrock",
+]
 
 
 def hermes(*args: str, timeout: int = 900) -> subprocess.CompletedProcess:
@@ -44,6 +76,13 @@ def hermes(*args: str, timeout: int = 900) -> subprocess.CompletedProcess:
 def db_size_mb() -> float:
     try:
         return STATE_DB.stat().st_size / (1024 * 1024)
+    except OSError:
+        return 0.0
+
+
+def wal_size_mb() -> float:
+    try:
+        return STATE_DB_WAL.stat().st_size / (1024 * 1024)
     except OSError:
         return 0.0
 
@@ -82,20 +121,49 @@ def optimize_sessions() -> str | None:
     return f"state.db: {before:.0f} MB -> {after:.0f} MB (reclaimed {before - after:.0f} MB)"
 
 
+def checkpoint_wal() -> str | None:
+    """Truncate the WAL if it has grown past 32 MB."""
+    before = wal_size_mb()
+    if before < 32:
+        return None
+    r = subprocess.run(
+        ["sqlite3", str(STATE_DB), "PRAGMA wal_checkpoint(TRUNCATE);"],
+        capture_output=True, text=True, timeout=120,
+    )
+    if r.returncode != 0:
+        return f"WAL checkpoint failed: {(r.stderr or r.stdout).strip()[:120]}"
+    after = wal_size_mb()
+    if after >= before - 1:
+        return None
+    return f"state.db WAL: {before:.0f} MB -> {after:.1f} MB (checkpointed)"
+
+
 def doctor_issues() -> str | None:
-    """Report doctor's failures/warnings, not its full output."""
-    r = hermes("doctor", timeout=300)
-    bad = [
-        ln.strip() for ln in (r.stdout or "").splitlines()
-        if ln.lstrip().startswith(("✗", "⚠"))
-    ]
+    """Report doctor's failures/warnings, filtered to only actionable items."""
+    r = hermes("doctor", "--fix", timeout=300)
+    bad: list[str] = []
+    for ln in (r.stdout or "").splitlines():
+        stripped = ln.strip()
+        if not stripped.startswith(("✗", "⚠")):
+            continue
+        # Skip anything matching our ignore list
+        if any(pat in stripped for pat in IGNORED_DOCTOR_PATTERNS):
+            continue
+        bad.append(stripped)
     if not bad:
         return None
     return "doctor:\n" + "\n".join(f"    {ln}" for ln in bad[:8])
 
 
 def main() -> int:
-    lines = [ln for ln in (prune_checkpoints(), optimize_sessions(), doctor_issues()) if ln]
+    lines = [
+        ln for ln in (
+            prune_checkpoints(),
+            optimize_sessions(),
+            checkpoint_wal(),
+            doctor_issues(),
+        ) if ln
+    ]
     if lines:
         print(f"[hermes-hygiene {time.strftime('%Y-%m-%d %H:%M')}]")
         for ln in lines:
