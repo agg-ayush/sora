@@ -9,7 +9,7 @@ and config templates for the multi-tier autonomous coding pipeline.
 plugin/     claude-orchestrate plugin (pure tmux session manager)
 plugins/    pr-review-toolkit patches (state-transition-reviewer specialist)
 skills/     tier1-suborchestration + tier2-orchestration skills
-scripts/    orphan-reaper.py (self-healing watchdog) + hermes-hygiene.py (weekly storage/health) + error-journal.py (failure capture) + watch_ci_main.py (CI watcher) + deny-guard.sh (T3 hook) + subagent-ledger-hook.py (subagent_stop hook → delegation ledger)
+scripts/    orphan-reaper.py (self-healing watchdog) + hermes-hygiene.py (weekly storage/health) + error-journal.py (failure capture) + watch_ci_main.py (CI watcher) + deny-guard.sh (T3 hook) + subagent-ledger-hook.py (subagent_stop hook → delegation ledger) + aws-token-refresh-hook.sh (post_tool_call hook → auto saml2aws refresh)
 docs/       hermes-tiers-reference.md (canonical architecture) + audit.md
 config/     config.yaml.template, env.template, zshrc-snippet.sh (NO secrets)
 ```
@@ -37,6 +37,13 @@ ln -sf ~/hermes-tier-setup/skills/tier2-orchestration ~/.hermes/skills/autonomou
 # 3. Scripts → symlink into Hermes scripts
 mkdir -p ~/.hermes/scripts
 ln -sf ~/hermes-tier-setup/scripts/orphan-reaper.py ~/.hermes/scripts/
+
+# 3b. Hooks → symlink into ~/.hermes/agent-hooks/ (Hermes hook scripts live
+# there, NOT in ~/.hermes/scripts/). The config template's hooks section
+# points at these paths.
+mkdir -p ~/.hermes/agent-hooks
+ln -sf ~/hermes-tier-setup/scripts/subagent-ledger-hook.py ~/.hermes/agent-hooks/subagent-ledger.py
+ln -sf ~/hermes-tier-setup/scripts/aws-token-refresh-hook.sh ~/.hermes/agent-hooks/aws-token-refresh.sh
 
 # 4. Config — copy templates and fill in
 cp ~/hermes-tier-setup/config/config.yaml.template ~/.hermes/config.yaml
