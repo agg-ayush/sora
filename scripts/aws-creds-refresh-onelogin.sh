@@ -12,12 +12,16 @@ log() { echo "[$(date '+%H:%M:%S')] $*" >> "$LOG"; }
 FORCE=0
 [[ "${1:-}" == "--force" ]] && FORCE=1
 
-args=(--credential-process --smart --quiet --role admin --select-role "RAM-AWS-Prod-DevFactory-devflows-Admin" --profile-name trilogy --login ayushaggarwal018@gmail.com)
-(( FORCE == 1 )) && args+=(--force)
+args=(--credential-process --quiet --role admin --select-role "RAM-AWS-Prod-DevFactory-devflows-Admin" --profile-name trilogy --login ayushaggarwal018@gmail.com --headless)
+if (( FORCE == 1 )); then
+  args+=(--force)
+else
+  args+=(--smart)
+fi
 
 log "starting refresh (force=$FORCE)"
 
-output=$("$SCRIPT" "${args[@]}" 2>&1)
+output=$(python3 "$SCRIPT" "${args[@]}" 2>&1)
 exit_code=$?
 
 if (( exit_code == 0 )); then

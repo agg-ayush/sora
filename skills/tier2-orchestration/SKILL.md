@@ -84,6 +84,32 @@ force-push, `mergeStateStatus` goes UNKNOWN for several seconds before GitHub
 recomputes it — poll (`gh pr view --json mergeable,mergeStateStatus`) until it
 settles to MERGEABLE/CLEAN rather than reporting UNKNOWN as a problem.
 -->
+<!-- LESSON: kanban triage->ready requires `specify`, not promote/claim.
+A task created in `triage` status cannot be `claim`ed (errors "status=triage")
+and `promote` only moves todo/blocked->ready (errors "promote only applies to
+todo or blocked"). A `dispatch` pass also won't move triage tasks (it promotes
+todo->ready but leaves triage alone). The correct transition out of triage is
+`hermes kanban --board <b> specify <task_id> --author <who>` — this records the
+triage decision and moves triage->todo; a subsequent `dispatch` pass (or the
+gateway daemon) then promotes todo->ready, after which `claim` works. Full
+sequence for a needs-design=no task you're executing directly: `assign` ->
+`specify` -> `dispatch` -> `claim`. (The `--board` flag is a GLOBAL kanban
+option that goes BEFORE the subcommand: `hermes kanban --board <b> <cmd>`, not
+`hermes kanban <cmd> --board <b>`.)
+-->
+<!-- LESSON: claude_orchestrate start overwrites prompt.md with the `prompt` arg.
+If you pre-write a detailed spec to ~/.hermes/tasks/<id>/prompt.md and then call
+`start` with a short "read prompt.md and execute it" wrapper as the `prompt`
+arg, `start` WRITES that short wrapper into prompt.md, clobbering your spec.
+The session then reads a self-referential file ("read prompt.md" whose body is
+"read prompt.md") and correctly reports NEEDS_CONTEXT / blocked. Fix: do NOT
+pre-populate prompt.md yourself. Either (a) pass the FULL spec as the `prompt`
+arg directly (claude_orchestrate writes it to prompt.md for you), or (b) write
+your spec to a DIFFERENT filename (e.g. spec.md) and pass `prompt`="Read
+~/.hermes/tasks/<id>/spec.md in full and execute it" so start's write of
+prompt.md doesn't touch your spec. If you already hit the clobber, rewrite
+prompt.md with the full spec and `steer` the still-alive session to re-read it.
+-->
 <!-- LESSON: ad-hoc verification script for conflict-resolution edits.
 When a gate demands fresh verification evidence for a specific edit (not just
 "suite is green"), write a temp script (`mktemp -t hermes-verify-XXXXXX.sh`)

@@ -8,6 +8,7 @@ which service manager runs the auto-update job. Everything else is portable.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 import subprocess
 import sys
 from datetime import datetime
@@ -72,7 +73,8 @@ def notify(title: str, body: str, sound: str | None = None) -> bool:
         script = f'display notification "{esc(body)[:220]}" with title "{esc(title)}"{clause}'
         cmd = ["osascript", "-e", script]
     else:
-        cmd = ["hermes", "send", "-t", "telegram", f"**{title}**\n\n{body}"]
+        hermes = str(Path.home() / ".local" / "bin" / "hermes")
+        cmd = [hermes, "send", "-t", "telegram", f"**{title}**\n\n{body}"]
 
     try:
         r = _run(cmd, timeout=30)

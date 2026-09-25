@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""watch_tier_events — macOS notifications for tier task state changes.
+"""watch_tier_events — notifications for tier task state changes.
 
 Polls every kanban board DB for NEW task_events of kind review_requested or
-blocked, and fires a native macOS notification for each one you haven't seen
+blocked, and fires a notification for each one you haven't seen
 yet. This surfaces "T2 raised a PR" (review) and "T2 needs you" (blocked) in
 the terminal/Mac notification center — not buried in Telegram.
 
@@ -45,15 +45,10 @@ def _save_state(state: dict) -> None:
 
 
 def _notify(title: str, body: str, sound: bool) -> None:
-    safe_t = title.replace("\\", "\\\\").replace('"', '\\"')
-    safe_b = body.replace("\\", "\\\\").replace('"', '\\"')[:220]
-    sound_clause = ' sound name "Glass"' if sound else ""
-    script = f'display notification "{safe_b}" with title "{safe_t}"{sound_clause}'
-    subprocess_run = ["osascript", "-e", script]
-    try:
-        os.spawnvp(os.P_NOWAIT, "osascript", subprocess_run)
-    except Exception:
-        pass
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent))
+    import _platform
+    _platform.notify(title, body)
 
 
 def main() -> int:
