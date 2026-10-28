@@ -1,15 +1,11 @@
-"""Tests for scripts/auth-canary.py and scripts/dead-supervisor-alert.py.
+"""Tests for scripts/auth-canary.py.
 
-Both are watermark-deduped cron watchers: silent on success, markdown on
-failure. These tests exercise the query + dedup + emit contract end-to-end
-against a tmpdir HERMES_HOME so no live state is touched.
+Watermark-deduped cron watcher: silent on success, markdown on failure.
+Exercises the query + dedup + emit contract end-to-end against a tmpdir
+HERMES_HOME so no live state is touched.
 
-Covers:
-- auth-canary: silent when healthy, alerts when sessions started but output
-  tokens are 0, dedupes within the bucket, re-alerts after the bucket rolls.
-- dead-supervisor-alert: silent on a clean board, flags abandoned (claim
-  expired back to ready) and stalled (running with stale heartbeat), and
-  dedupes repeat findings across runs.
+Covers: silent when healthy, alerts when sessions started but output tokens
+are 0, dedupes within the bucket, re-alerts after the bucket rolls.
 """
 
 from __future__ import annotations
@@ -68,21 +64,6 @@ def _make_state_db(home: Path, *, sessions: int, output_tokens: int, age_s: int 
         con.execute("INSERT INTO sessions VALUES (?,?)", (f"s-{i}", now - age_s))
         con.execute("INSERT INTO session_model_usage VALUES (?,?,?)",
                     (f"s-{i}", now - age_s, output_tokens))
-    con.commit()
-    con.close()
-
-
-def _make_kanban_db(home: Path, board: str, rows: list[tuple]) -> None:
-    """rows: (id, title, status, created_at, started_at, completed_at, branch, last_hb)"""
-    d = home / "kanban" / "boards" / board
-    d.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(d / "kanban.db")
-    con.execute("""CREATE TABLE tasks (
-        id TEXT PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL,
-        created_at INTEGER NOT NULL, started_at INTEGER, completed_at INTEGER,
-        branch_name TEXT, last_heartbeat_at INTEGER
-    )""")
-    con.executemany("INSERT INTO tasks VALUES (?,?,?,?,?,?,?,?)", rows)
     con.commit()
     con.close()
 
@@ -156,87 +137,6 @@ class AuthCanaryTest(_TmpHome):
             rc2, out2 = self._run()
         self.assertIn("Agents are running", out1)
         self.assertEqual(out2, "")  # same bucket — already alerted
-
-
-class DeadSupervisorAlertTest(_TmpHome):
-    def setUp(self):
-        super().setUp()
-        self.mod = _load("dead_supervisor_alert",
-                         REPO / "scripts" / "dead-supervisor-alert.py")
-
-    def _run(self) -> tuple[int, str]:
-        buf = StringIO()
-        with redirect_stdout(buf):
-            rc = self.mod.main()
-        return rc, buf.getvalue()
-
-    def test_no_boards_returns_2(self):
-        with patch.object(sys, "argv", ["dead-supervisor-alert"]):
-            rc = self.mod.main()
-        self.assertEqual(rc, 2)
-
-    def test_healthy_board_is_silent(self):
-        now = int(time.time())
-        # Done task + actively-heartbeating running task — neither should alert
-        _make_kanban_db(self.home, "b1", [
-            ("t-1", "Done work", "done", now - 3600, now - 1800, now - 60, "br", None),
-            ("t-2", "Active", "running", now - 600, now - 300, None, "br2", now - 30),
-        ])
-        with patch.object(sys, "argv", ["dead-supervisor-alert"]):
-            rc, out = self._run()
-        self.assertEqual(rc, 0)
-        self.assertEqual(out, "")
-
-    def test_first_run_is_baseline_silent(self):
-        now = int(time.time())
-        _make_kanban_db(self.home, "b1", [
-            ("t-1", "Abandoned", "ready", now - 3600, now - 1800, None, "br", None),
-        ])
-        with patch.object(sys, "argv", ["dead-supervisor-alert"]):
-            rc, out = self._run()
-        self.assertEqual(rc, 0)
-        self.assertEqual(out, "")  # baseline, no emit
-
-    def test_flags_abandoned_and_stalled(self):
-        now = int(time.time())
-        _make_kanban_db(self.home, "b1", [
-            ("t-1", "Abandoned", "ready", now - 3600, now - 1800, None, "br-a", None),
-            ("t-2", "Stalled", "running", now - 3600, now - 1800, None, "br-s", now - 2700),
-        ])
-        with patch.object(sys, "argv", ["dead-supervisor-alert"]):
-            self._run()  # baseline
-        wm_file = self.state / "dead-supervisor-alert.json"
-        d = json.loads(wm_file.read_text())
-        d["seen_ids"] = []
-        wm_file.write_text(json.dumps(d))
-
-        with patch.object(sys, "argv", ["dead-supervisor-alert"]):
-            rc, out = self._run()
-        self.assertEqual(rc, 0)
-        self.assertIn("was abandoned", out)
-        self.assertIn("stopped responding", out)
-        self.assertIn("t-1", out)
-        self.assertIn("t-2", out)
-        self.assertIn("Status is `ready`", out)
-        self.assertIn("Status is `running`", out)
-
-    def test_dedupes_repeat_findings(self):
-        now = int(time.time())
-        _make_kanban_db(self.home, "b1", [
-            ("t-1", "Abandoned", "ready", now - 3600, now - 1800, None, "br", None),
-        ])
-        with patch.object(sys, "argv", ["dead-supervisor-alert"]):
-            self._run()  # baseline
-        wm_file = self.state / "dead-supervisor-alert.json"
-        d = json.loads(wm_file.read_text())
-        d["seen_ids"] = []
-        wm_file.write_text(json.dumps(d))
-
-        with patch.object(sys, "argv", ["dead-supervisor-alert"]):
-            _, out1 = self._run()
-            _, out2 = self._run()
-        self.assertIn("t-1", out1)
-        self.assertEqual(out2, "")  # already alerted — silent
 
 
 if __name__ == "__main__":

@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import errno
 import fnmatch
 import hashlib
 import json
 import os
 import re
+import secrets
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -146,6 +149,93 @@ def _check_available() -> bool:
     return bool(shutil.which("tmux") and shutil.which("claude"))
 
 
+SECRET_HANDOFF_TIMEOUT = 10.0
+
+
+def _secret_fifo_dir() -> Path:
+    """Private 0700 dir for one-shot secret FIFOs; raises OSError if unsafe."""
+    fifo_dir = get_hermes_home() / "cache" / "secret-handoff"
+    fifo_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    st = os.lstat(fifo_dir)
+    if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid():
+        raise OSError(f"unsafe secret handoff dir {fifo_dir}")
+    os.chmod(fifo_dir, 0o700)
+    return fifo_dir
+
+
+def _handoff_secret_via_fifo(fifo: Path, secret: str, timeout: float = SECRET_HANDOFF_TIMEOUT) -> bool:
+    """Write secret + newline into fifo once a reader attaches; False on timeout or any error."""
+    data = memoryview(secret.encode("utf-8") + b"\n")
+    deadline = time.monotonic() + timeout
+    fd = None
+    try:
+        while fd is None:
+            try:
+                fd = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
+            except OSError as exc:
+                # ENXIO: no reader attached yet.
+                if exc.errno != errno.ENXIO or time.monotonic() >= deadline:
+                    return False
+                time.sleep(0.05)
+        if not stat.S_ISFIFO(os.fstat(fd).st_mode):
+            return False
+        while data:
+            try:
+                data = data[os.write(fd, data):]
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    return False
+                time.sleep(0.05)
+            except OSError:
+                return False
+        return True
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+
+SEATBELT_BASE_URL = "https://<model-gateway>"
+SEATBELT_MODELS = {
+    "opus": "claude-teams-group/claude-opus-5-5[1m]",
+    "sonnet": "claude-teams-group/claude-sonnet-5-5[1m]",
+}
+SEATBELT_HAIKU_MODEL = "claude-teams-group/claude-haiku-4-5-20251001"
+SEATBELT_FABLE_MODEL = "claude-teams-group/claude-fable-5-1[1m]"
+_SEATBELT_HEADER_RE = re.compile(r"^(x-tfy-api-key|x-maat-token): (.*)$", re.MULTILINE)
+_SEATBELT_ASSIGN_RE = re.compile(r"seatbelt_headers=\$'(.*?)'", re.DOTALL)
+
+
+def _seatbelt_home() -> Path:
+    return Path.home()
+
+
+def _seatbelt_headers() -> str:
+    """Build ANTHROPIC_CUSTOM_HEADERS from the user's rc file; raises ValueError if unusable."""
+    home = _seatbelt_home()
+    names = [".zshrc", ".bashrc"] if sys.platform == "darwin" else [".bashrc", ".zshrc"]
+    texts = []
+    for name in names:
+        text = _read_text(home / name)
+        if text is not None:
+            texts.append((name, text))
+    if not texts:
+        raise ValueError(f"seatbelt headers rc file not found (looked for {', '.join(names)} in {home})")
+    name, text = next(((n, t) for n, t in texts if "seatbelt_headers" in t), texts[0])
+    # rc stores the two headers inside a $'...' assignment with a literal \n
+    # escape between them; unescape before matching header lines.
+    assign = _SEATBELT_ASSIGN_RE.search(text)
+    haystack = assign.group(1).replace("\\n", "\n") if assign else text
+    found = {m.group(1): m.group(2).rstrip().rstrip("'").rstrip() for m in _SEATBELT_HEADER_RE.finditer(haystack)}
+    if "x-tfy-api-key" not in found or "x-maat-token" not in found:
+        raise ValueError(f"x-tfy-api-key / x-maat-token header lines missing in ~/{name}")
+    tfy_key = os.environ.get("TFY_API_KEY") or ""
+    if len(tfy_key) < 8:
+        raise ValueError("model_provider=seatbelt requires TFY_API_KEY in env")
+    if not found["x-tfy-api-key"].endswith(tfy_key[-8:]):
+        raise ValueError(f"stale seatbelt token: x-tfy-api-key in ~/{name} does not match the configured TFY_API_KEY (mismatch)")
+    return f"x-tfy-api-key: {found['x-tfy-api-key']}\nx-maat-token: {found['x-maat-token']}"
+
+
 def _start(args: dict) -> dict:
     task_id = str(args.get("task_id") or "").strip()
     prompt = args.get("prompt")
@@ -161,10 +251,22 @@ def _start(args: dict) -> dict:
         return {"ok": False, "error": "task_id, prompt, and workdir are required"}
     if executor not in {"claude", "codex"}:
         return {"ok": False, "error": f"invalid executor: {executor!r} (must be 'claude' or 'codex')"}
-    if model_provider not in {"truefoundry", "fireworks"}:
-        return {"ok": False, "error": f"invalid model_provider: {model_provider!r} (must be 'truefoundry' or 'fireworks')"}
+    if model_provider not in {"truefoundry", "fireworks", "seatbelt"}:
+        return {"ok": False, "error": f"invalid model_provider: {model_provider!r} (must be 'truefoundry', 'fireworks' or 'seatbelt')"}
     if effort and effort not in {"low", "medium", "high", "xhigh", "max"}:
         return {"ok": False, "error": f"invalid effort: {effort!r}"}
+    seatbelt_model = None
+    seatbelt_headers = ""
+    if model_provider == "seatbelt":
+        if executor != "claude":
+            return {"ok": False, "error": "model_provider=seatbelt is only supported with executor=claude"}
+        seatbelt_model = SEATBELT_MODELS.get(model or "")
+        if seatbelt_model is None:
+            return {"ok": False, "error": f"invalid model for seatbelt: {model!r} (must be 'opus' or 'sonnet')"}
+        try:
+            seatbelt_headers = _seatbelt_headers()
+        except ValueError as exc:
+            return {"ok": False, "error": f"{exc}; failing closed"}
     if _session_exists(task_id):
         return {"ok": False, "error": f"tmux session '{task_id}' already exists"}
 
@@ -195,6 +297,10 @@ def _start(args: dict) -> dict:
                 }
         rundir = str(worktree_path)
 
+    opus_tf_route = (
+        executor == "claude" and model_provider == "truefoundry"
+        and model == "claude-group/claude-opus-5-5"
+    )
     status_instruction = (
         f"\n\nAt each phase boundary, write a single word to {shlex.quote(status_path.as_posix())}: "
         "investigating, implementing, testing, blocked, or complete. "
@@ -207,7 +313,20 @@ def _start(args: dict) -> dict:
         "state what's needed after the token), or BLOCKED (blocked by an external/unsolvable problem — "
         "state why after the token)."
     )
+    if opus_tf_route:
+        # $-expansion/`..` in redirect targets trip claude's approval prompt;
+        # literal paths under the --add-dir grant below write unattended.
+        status_instruction += (
+            f" Write status.md, result.md, outcome.md (and any review verdict under "
+            f"{shlex.quote(artifact_dir.resolve().as_posix())}) with Bash redirects to those literal "
+            "absolute paths — no shell variables, command substitutions, or the built-in Write tool "
+            "for task files."
+        )
     full_prompt = f"{prompt}{status_instruction}"
+    if opus_tf_route:
+        # Opus launches idle (no positional prompt); the brief is handed over
+        # from disk, so prompt.md must carry the full instructions.
+        _write_text(artifact_dir / "prompt.md", full_prompt)
 
     if executor == "codex":
         exec_cmd = "codex"
@@ -215,6 +334,12 @@ def _start(args: dict) -> dict:
             exec_cmd += " --dangerously-bypass-approvals-and-sandbox"
         if model:
             exec_cmd += f" -m {shlex.quote(model)}"
+        if model == "gpt-6-sol" and worktree_path is not None:
+            # Plugin-created worktrees are untrusted dirs and stall on codex's
+            # trust prompt before the brief submits. Trust exactly this path
+            # for this launch only — -c is process-scoped, no config write.
+            trust = f'projects={{{json.dumps(str(worktree_path.resolve()))}={{trust_level="trusted"}}}}'
+            exec_cmd += f" -c {shlex.quote(trust)}"
         # Codex 0.144.x has a bug where a positional prompt arg triggers a
         # spurious "Missing environment variable: TFY_API_KEY" error. Launch
         # bare and send the prompt via send-keys after a short startup delay.
@@ -224,10 +349,19 @@ def _start(args: dict) -> dict:
         )
     else:
         exec_cmd = "claude"
-        if dangerous:
+        if opus_tf_route:
+            # Pinned side-by-side CLI; never fall back to the global/older claude.
+            pinned_claude = get_hermes_home() / "claude-opus55-cli" / "node_modules" / ".bin" / "claude"
+            if not (pinned_claude.is_file() and os.access(pinned_claude, os.X_OK)):
+                return {"ok": False, "error": f"pinned claude executable missing or not executable at {pinned_claude}; failing closed"}
+            exec_cmd = shlex.quote(pinned_claude.as_posix())
+            # With subprocess env scrub on, bypassPermissions still starts in
+            # manual mode; auto approves safe artifact writes unattended.
+            exec_cmd += " --permission-mode auto"
+        elif dangerous:
             exec_cmd += " --dangerously-skip-permissions"
-        if model and model_provider != "fireworks":
-            # In the fireworks path the model is set via ANTHROPIC_MODEL env vars;
+        if model and model_provider not in {"fireworks", "seatbelt"}:
+            # In the fireworks/seatbelt paths the model is set via env vars;
             # passing --model truncates the accounts/... path in interactive mode (403).
             exec_cmd += f" --model {shlex.quote(model)}"
         if effort:
@@ -237,10 +371,18 @@ def _start(args: dict) -> dict:
         # is the broker — the agent edits+commits, never pushes/merges. Write a
         # per-session settings.json with the hook and pass it via --settings.
         deny_settings = artifact_dir / "deny-settings.json"
-        deny_settings.write_text(json.dumps({
+        session_settings: dict = {
             "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": str(_deny_guard_path())}]}]}
-        }), encoding="utf-8")
+        }
+        if opus_tf_route:
+            # A safety-flagged request stops instead of silently switching models.
+            session_settings["switchModelsOnFlag"] = False
+        deny_settings.write_text(json.dumps(session_settings), encoding="utf-8")
         exec_cmd += f" --settings {shlex.quote(str(deny_settings))}"
+        if opus_tf_route:
+            # Per-session sandbox grant: the artifact dir lives outside the
+            # workdir, so whitelist it or every status write prompts.
+            exec_cmd += f" --add-dir {shlex.quote(artifact_dir.resolve().as_posix())}"
         # Secret-scrub: pop credentials from the child env so a Bash-equipped
         # agent can't exfiltrate them (the broker holds the secrets and pushes
         # on the agent's behalf). NOTE: do NOT scrub FIREWORKS_API_KEY — the
@@ -249,7 +391,7 @@ def _start(args: dict) -> dict:
             f"unset {k}" for k in ("GITHUB_TOKEN", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "TFY_API_KEY", "TRUEFOUNDRY_API_KEY")
         )
         if model_provider == "fireworks":
-            # Route this session to Kimi K3 on Fireworks' Anthropic-compatible
+            # Route this session to GLM-5.3 on Fireworks' Anthropic-compatible
             # endpoint. CLAUDE_CONFIG_DIR isolates the session from the personal
             # OAuth login + TF-gateway settings.json (which otherwise override
             # env-var routing). ANTHROPIC_API_KEY must be explicitly empty so the
@@ -277,18 +419,18 @@ def _start(args: dict) -> dict:
                 changed = True
             if changed:
                 k3_state.write_text(json.dumps(existing, indent=2), encoding="utf-8")
-            k3_model = "accounts/fireworks/models/kimi-k3"
+            fw_model = "accounts/fireworks/models/glm-5p3"
             k3_exports = (
                 f"export CLAUDE_CONFIG_DIR={shlex.quote(k3_config.as_posix())} && "
                 f"export ANTHROPIC_BASE_URL=https://api.fireworks.ai/inference && "
                 f"export ANTHROPIC_AUTH_TOKEN={shlex.quote(fireworks_key)} && "
                 f"export ANTHROPIC_API_KEY= && "
-                f"export ANTHROPIC_MODEL={k3_model} && "
-                f"export ANTHROPIC_DEFAULT_OPUS_MODEL={k3_model} && "
-                f"export ANTHROPIC_DEFAULT_SONNET_MODEL={k3_model} && "
-                f"export ANTHROPIC_DEFAULT_HAIKU_MODEL={k3_model} && "
-                f"export ANTHROPIC_DEFAULT_FABLE_MODEL={k3_model} && "
-                f"export CLAUDE_CODE_SUBAGENT_MODEL={k3_model} && "
+                f"export ANTHROPIC_MODEL={fw_model} && "
+                f"export ANTHROPIC_DEFAULT_OPUS_MODEL={fw_model} && "
+                f"export ANTHROPIC_DEFAULT_SONNET_MODEL={fw_model} && "
+                f"export ANTHROPIC_DEFAULT_HAIKU_MODEL={fw_model} && "
+                f"export ANTHROPIC_DEFAULT_FABLE_MODEL={fw_model} && "
+                f"export CLAUDE_CODE_SUBAGENT_MODEL={fw_model} && "
                 f"export CLAUDE_CODE_AUTO_COMPACT_WINDOW=1048576 && "
             )
             shell_cmd = (
@@ -297,23 +439,156 @@ def _start(args: dict) -> dict:
                 f"{k3_exports}"
                 f"{exec_cmd} {shlex.quote(full_prompt)}"
             )
-        else:
+        elif model_provider == "seatbelt":
+            # Isolate from the personal OAuth login/settings.json (same reason as
+            # the fireworks route) and pre-seed onboarding so the first launch
+            # doesn't stall on the welcome/theme screens.
+            sb_config = get_hermes_home() / "claude-seatbelt-config"
+            sb_config.mkdir(parents=True, exist_ok=True)
+            sb_state = sb_config / ".claude.json"
+            try:
+                existing = json.loads(sb_state.read_text(encoding="utf-8")) if sb_state.exists() else {}
+            except ValueError:
+                existing = {}
+            if not existing.get("hasCompletedOnboarding"):
+                existing["hasCompletedOnboarding"] = True
+                sb_state.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+            # Trust the launch dir + accept bypass-permissions: both dialogs
+            # default to "No, exit" in an isolated config and silently kill an
+            # unattended T2 spawn. hasTrustDialogAccepted covers the trust
+            # dialog; bypassPermissionsModeAccepted covers the warning.
+            trust_projects = existing.setdefault("projects", {})
+            proj = trust_projects.setdefault(str(Path(rundir).resolve()), {})
+            changed = False
+            if not proj.get("hasTrustDialogAccepted"):
+                proj["hasTrustDialogAccepted"] = True
+                changed = True
+            if not existing.get("bypassPermissionsModeAccepted"):
+                existing["bypassPermissionsModeAccepted"] = True
+                changed = True
+            if changed:
+                sb_state.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+            seatbelt_exports = (
+                f"export CLAUDE_CONFIG_DIR={shlex.quote(sb_config.as_posix())} && "
+                f"export ANTHROPIC_BASE_URL={SEATBELT_BASE_URL} && "
+                "export ANTHROPIC_AUTH_TOKEN=seatbelt && "
+                f"export ANTHROPIC_CUSTOM_HEADERS={shlex.quote(seatbelt_headers)} && "
+                f"export ANTHROPIC_DEFAULT_OPUS_MODEL={shlex.quote(seatbelt_model)} && "
+                f"export ANTHROPIC_DEFAULT_SONNET_MODEL={shlex.quote(seatbelt_model)} && "
+                f"export ANTHROPIC_DEFAULT_HAIKU_MODEL={shlex.quote(SEATBELT_HAIKU_MODEL)} && "
+                f"export ANTHROPIC_DEFAULT_FABLE_MODEL={shlex.quote(SEATBELT_FABLE_MODEL)} && "
+                "export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1 && "
+                "export CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1 && "
+            )
+            # Headers are exported before env_scrub unsets TFY_API_KEY.
             shell_cmd = (
                 f"cd {shlex.quote(Path(rundir).as_posix())} && "
+                "unset ANTHROPIC_API_KEY ANTHROPIC_API_KEY_BACKUP BACKUP_ANTHROPIC_API_KEY && "
+                f"{seatbelt_exports}"
+                f"{env_scrub} && "
+                f"{exec_cmd} {shlex.quote(full_prompt)}"
+            )
+        else:
+            tf_auth = ""
+            if model == "claude-group/claude-opus-5-5":
+                # Opus review route: the spawned session has no TF login, so
+                # route via env. References $TFY_API_KEY (read from the handoff
+                # FIFO below) rather than inlining the secret; must precede env_scrub.
+                if not os.environ.get("TFY_API_KEY"):
+                    return {"ok": False, "error": "model=claude-group/claude-opus-5-5 via truefoundry requires TFY_API_KEY in env; failing closed"}
+                tf_auth = (
+                    "export ANTHROPIC_BASE_URL=https://<llm-gateway>.truefoundry.cloud/api/llm && "
+                    'export ANTHROPIC_AUTH_TOKEN="$TFY_API_KEY" && '
+                    # Claude itself keeps the token; only its Bash/hook/MCP
+                    # subprocesses get a credential-stripped env.
+                    "export CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 && "
+                )
+            shell_cmd = (
+                f"cd {shlex.quote(Path(rundir).as_posix())} && "
+                f"{tf_auth}"
                 f"{env_scrub} && "
                 # ambient ANTHROPIC_API_KEY breaks the TrueFoundry gateway claude uses
                 "unset ANTHROPIC_API_KEY ANTHROPIC_API_KEY_BACKUP BACKUP_ANTHROPIC_API_KEY && "
-                f"{exec_cmd} {shlex.quote(full_prompt)}"
+                # A positional prompt at startup drops auto mode to manual
+                # (v2.1.284); the Opus route launches idle instead.
+                f"{exec_cmd}{'' if opus_tf_route else ' ' + shlex.quote(full_prompt)}"
             )
-    # Ensure TFY_API_KEY is available inside the tmux session (the tmux server
-    # may have been started before Hermes loaded .env, so it won't inherit the
-    # key from the current shell). Export it explicitly in the shell command.
-    tfy_key = os.environ.get("TFY_API_KEY") or ""
-    tfy_export = f"export TFY_API_KEY={shlex.quote(tfy_key)} && " if tfy_key else ""
-    shell_cmd = f"{tfy_export}{shell_cmd}"
-    launch = _run(["tmux", "new-session", "-d", "-s", task_id, "-x", "160", "-y", "50", shell_cmd])
-    if launch.returncode != 0:
-        return {"ok": False, "error": (launch.stderr or launch.stdout or "tmux new-session failed").strip()}
+    fifo_path: Path | None = None
+    if opus_tf_route:
+        # TFY_API_KEY arrives over a one-shot private FIFO, never via argv.
+        try:
+            fifo_dir = _secret_fifo_dir().resolve()
+        except OSError as exc:
+            return {"ok": False, "error": f"secret handoff dir unavailable ({type(exc).__name__}); failing closed"}
+        if any(fifo_dir.is_relative_to(p) for p in (artifact_dir.resolve(), Path(rundir).resolve(), Path(workdir).resolve())):
+            return {"ok": False, "error": f"secret handoff dir {fifo_dir} is inside the task or repo dir; failing closed"}
+        fifo_path = fifo_dir / f"tfy-{secrets.token_hex(16)}.fifo"
+        try:
+            os.mkfifo(fifo_path, 0o600)
+        except OSError as exc:
+            return {"ok": False, "error": f"secret handoff FIFO creation failed ({type(exc).__name__}); failing closed"}
+        # Input comes from the FIFO, not the tty, so nothing echoes into the pane.
+        shell_cmd = (
+            f"IFS= read -r TFY_API_KEY < {shlex.quote(fifo_path.as_posix())} && "
+            '[ -n "$TFY_API_KEY" ] && '
+            f"{shell_cmd}"
+        )
+    else:
+        # Ensure TFY_API_KEY is available inside the tmux session (the tmux server
+        # may have been started before Hermes loaded .env, so it won't inherit the
+        # key from the current shell). Export it explicitly in the shell command.
+        tfy_key = os.environ.get("TFY_API_KEY") or ""
+        tfy_export = f"export TFY_API_KEY={shlex.quote(tfy_key)} && " if tfy_key else ""
+        shell_cmd = f"{tfy_export}{shell_cmd}"
+    try:
+        launch = _run(["tmux", "new-session", "-d", "-s", task_id, "-x", "160", "-y", "50", shell_cmd])
+        if launch.returncode != 0:
+            return {"ok": False, "error": (launch.stderr or launch.stdout or "tmux new-session failed").strip()}
+        if fifo_path is not None:
+            try:
+                handed_off = _handoff_secret_via_fifo(fifo_path, os.environ.get("TFY_API_KEY") or "")
+            except Exception:
+                handed_off = False
+            if not handed_off:
+                # "=" pins an exact session-name match.
+                _run(["tmux", "kill-session", "-t", f"={task_id}"])
+                return {"ok": False, "error": "TFY_API_KEY handoff to the Opus session failed; killed it, failing closed", "task_id": task_id}
+    finally:
+        if fifo_path is not None:
+            try:
+                fifo_path.unlink()
+            except OSError:
+                pass
+
+    auto_mode_ready = None
+    if opus_tf_route:
+        # With the scrub env the idle TUI starts in manual mode even with
+        # --permission-mode auto; cycle Shift+Tab (manual → acceptEdits → plan
+        # → auto) until auto is live, then hand over the brief. Fail closed:
+        # no auto signal, no brief — the T2 supervisor takes over.
+        auto_mode_ready = False
+        btabs = 0
+        for _ in range(45):  # ~90s boot budget + ≤4 mode cycles
+            if not _session_exists(task_id):
+                break
+            pane = _run(["tmux", "capture-pane", "-t", task_id, "-p"]).stdout or ""
+            if "auto mode on" in pane:
+                auto_mode_ready = True
+                break
+            idle_with_mode = "❯" in pane and any(
+                m in pane for m in ("manual mode", "accept edits", "plan mode")
+            )
+            if idle_with_mode and btabs < 4:
+                _run(["tmux", "send-keys", "-t", task_id, "BTab"])
+                btabs += 1
+            time.sleep(2)
+        if auto_mode_ready:
+            prompt_md = (artifact_dir / "prompt.md").resolve().as_posix()
+            _run(["tmux", "send-keys", "-t", task_id, "-l", f"Read {prompt_md} in full and execute it."])
+            _run(["tmux", "send-keys", "-t", task_id, "Enter"])
+        else:
+            _run(["tmux", "kill-session", "-t", task_id])
+            return {"ok": False, "error": "auto mode never came up on the Opus session; killed it, no brief sent", "task_id": task_id}
 
     # For codex: the prompt is sent via send-keys after a short startup delay
     # (codex 0.144.x has a bug with positional prompt args — see comment above).
@@ -334,6 +609,17 @@ def _start(args: dict) -> dict:
             state = _session_state(task_id)
             if state.get("state") != "working":
                 return {"ok": False, "error": f"brief submit failed: session is {state.get('state')}, not working. Check the tmux pane manually.", "task_id": task_id}
+
+    # codex 0.154.x shows a startup confirmation ("1. Yes, continue / Press enter
+    # to continue") when launched with --dangerously-bypass-approvals-and-sandbox.
+    # The brief cannot land until it is dismissed; answer Yes. Sends before the
+    # codex brief (which is typed literally), so an in-progress brief line is
+    # never clobbered. The menu only appears at codex startup; an already-accepted
+    # codex session never shows it again, so this is harmless when absent.
+    if executor == "codex" and dangerous:
+        _run(["tmux", "send-keys", "-t", task_id, "Enter"])
+        time.sleep(2)
+        _run(["tmux", "send-keys", "-t", task_id, "Enter"])
 
     # Full pane logging via pipe-pane crashes the git-bash/MSYS tmux server
     # (takes down ALL sessions). Only safe on real Linux/macOS tmux; on Windows
@@ -387,7 +673,7 @@ def _start(args: dict) -> dict:
         except Exception:
             pass
 
-    return {
+    result = {
         "ok": True,
         "task_id": task_id,
         "session": task_id,
@@ -395,6 +681,9 @@ def _start(args: dict) -> dict:
         "artifact_dir": artifact_dir.as_posix(),
         "watcher_needed": watcher_armed,
     }
+    if auto_mode_ready is not None:
+        result["auto_mode_ready"] = auto_mode_ready
+    return result
 
 
 def _git_porcelain_for_fingerprint(rundir: str | None) -> str:
@@ -640,6 +929,7 @@ def _wait(args: dict) -> dict:
         stall_seconds = STALL_SECONDS
 
     deadline = time.monotonic() + timeout
+    artifact_dir = _artifact_dir(task_id)
     while True:
         # Auto-heartbeat the kanban claim this session serves (if any) — the
         # supervisor's event loop is blocked here, so a >TTL blocking wait would
@@ -1176,12 +1466,13 @@ CLAUDE_ORCHESTRATE_SCHEMA = {
             },
             "model_provider": {
                 "type": "string",
-                "enum": ["truefoundry", "fireworks"],
+                "enum": ["truefoundry", "fireworks", "seatbelt"],
                 "description": (
                     "Backend routing for the claude executor (start). "
                     "truefoundry (default) = Claude models via the TF gateway; "
-                    "fireworks = Kimi K3 via Fireworks' Anthropic-compatible endpoint "
-                    "(isolated CLAUDE_CONFIG_DIR, ignores --model). Codex executor ignores this."
+                    "fireworks = GLM-5.3 via Fireworks' Anthropic-compatible endpoint "
+                    "(isolated CLAUDE_CONFIG_DIR, ignores --model); "
+                    "seatbelt = Claude via the seatbelt gateway (claude executor only; model must be 'opus' or 'sonnet')."
                 ),
             },
             "effort": {

@@ -89,10 +89,10 @@ role actually has. Before trusting or diagnosing an `AccessDenied`:
 
 ```bash
 unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_SECURITY_TOKEN AWS_PROFILE
-aws sts get-caller-identity --profile trilogy --query Arn --output text
+aws sts get-caller-identity --profile devflows --query Arn --output text
 ```
 
-and pass `--profile trilogy` explicitly on the calls that matter rather than
+and pass `--profile devflows` explicitly on the calls that matter rather than
 relying on ambient shell state.
 
 Never hand-type a truncated/masked access-key ID from console output — pull it

@@ -59,8 +59,11 @@ Then `claude_orchestrate wait` and read the verdict file.
 | comment-analyzer | Comment accuracy | If comments/docs added |
 | pr-test-analyzer | Test coverage | If test files changed |
 | type-design-analyzer | Type design, invariants | If types added/modified |
-| state-transition-reviewer | State-transition adversarial paths (failure-then-retry, reset coverage, mid-flight config, dual-writer desync) | If the diff introduces stateful behavior |
+| state-transition-reviewer | State-transition adversarial paths (failure-then-retry, reset coverage, mid-flight config, dual-writer desync) | If the diff introduces stateful behavior — deployed from `hermes-setup/plugins/pr-review-toolkit/agents/`, not part of the stock plugin |
 | code-simplifier | Polish and refine | After passing review |
+
+The stock plugin ships six agents (no state-transition-reviewer — that one is
+ours, deployed alongside the stock set into the plugin's agents dir).
 
 ## The verdict format
 
@@ -73,6 +76,62 @@ confidence: <0-100>
 findings: [...]
 state_transitions: clean|needs_fixes   # only if the stateful reviewer fired
 ```
+
+## Standalone audit mode (no PR, no diff)
+
+The no-diff maintenance audit: "does this existing
+component carry removable weight?" — dead code, duplicated logic, oversized
+functions, untested-but-shipped paths — on code that already exists and
+already ships, with no change to score against. Run it in the same review
+session (or any Hermes session) using the method below.
+
+### Read-only extraction
+
+When the mandate is read-only, never `git checkout`/`git pull` the target
+branch into the repo's working tree. Extract via `git show` into a scratch dir:
+
+```bash
+git -C <repo> fetch origin <ref>            # ref = branch/PR/tag
+mkdir -p /tmp/<audit-name>
+for f in $(git -C <repo> ls-tree -r --name-only origin/<ref> -- <subdir>); do
+  mkdir -p "/tmp/<audit-name>/$(dirname "$f")"
+  git -C <repo> show "origin/<ref>:$f" > "/tmp/<audit-name>/$f"
+done
+```
+
+### Audit method
+
+1. **Read every in-scope file fully before judging** — source AND its test
+   files; test coverage is a primary signal. Partial reads produce
+   indefensible verdicts.
+2. **Cross-file symbol-usage scan → dead code**: for every
+   function/constant/class defined in src, count usages across src AND
+   tests (systematic script, not eyeballing). Zero uses outside its own
+   definition = dead code, flag for removal.
+3. **Untested-but-shipped**: grep each logical unit's distinguishing
+   string/id across test files. Zero test mentions is a finding, NOT an
+   automatic deletion — dead (also zero call sites) → safe to delete;
+   live-but-untested → "either delete or add minimal tests," stated
+   explicitly. Deleting live-untested code is a product/risk call, not a
+   refactor call.
+4. **Duplicate-logic scan**: same regex/literal/algorithm defined more than
+   once across files. Each duplicate is one cut-list line: "extract into
+   `_shared_helper`, ~N LOC saved."
+5. **Oversized-function scan**: lint-suppression clusters (`noqa: PLR0912`,
+   `eslint-disable`, `# type: ignore` groups) + line count. A 150+ line
+   function with 2+ suppressions is a structural finding: propose a concrete
+   split along its own phase boundaries.
+6. **Summary table ordered by value/effort** (| # | Location | Issue |
+   Suggested simplification | Est. LOC saved | Risk |), pure dead code first,
+   needs-product-decision middle, risky-defer last.
+7. **"What NOT to simplify" section — mandatory**: name the code that looks
+   reducible but is defect-hardened (whitespace-preservation tied to a past
+   bug, a hand-rolled parser solving a different problem than a lookalike
+   library, literal fixtures reproducing real defect geometries). Some of
+   the ugliest code is there because a simpler version already broke once.
+8. **Bottom-line verdict + ranked top 3** (healthy/accreting/needs-attention,
+   where specifically; the top-3 is the actionable ask, the table is the
+   reference). Defer medium/high-risk items until low-risk ones land.
 
 ## Fallback (Claude Code auth down)
 

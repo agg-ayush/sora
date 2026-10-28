@@ -116,6 +116,10 @@ class DoomLoopBreakerTest(unittest.TestCase):
 
     def test_gate_includes_doom_loop_key(self):
         task = "t2-test-gate"
+        claude_orchestrate._write_text(
+            claude_orchestrate._artifact_dir(task) / "meta.json",
+            '{"task_id": "' + task + '", "phase": "3"}',
+        )
         result = claude_orchestrate._gate({"task_id": task})
         self.assertIn("doom_loop", result)
 

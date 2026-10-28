@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "smem hook post-tool-use",
+            "timeout": 10,
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "smem hook session-start",
+            "timeout": 10,
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ]
+  }
+}

@@ -1,6 +1,6 @@
-# hermes-tier-setup — Audit Report
+# hermes-setup — Audit Report
 
-**Scope:** `agg-ayush/hermes-tier-setup` cross-checked against the installed
+**Scope:** `agg-ayush/hermes-setup` cross-checked against the installed
 base Hermes Agent repo (`~/.hermes/hermes-agent`) and the live `hermes` CLI on this
 machine. Covers correctness bugs, doc/reality drift, internal inconsistencies,
 missing content, and external prior-art worth adopting.
@@ -104,7 +104,7 @@ memory-offload cleanup ("moved out of always-loaded agent memory... to keep the
 per-turn context lean") into whatever repo/dir was open at the time. Recommend
 moving it to a repo that actually owns the article-gen fleet, or a dedicated
 personal-notes repo — it has zero bearing on tier orchestration and dilutes what
-"hermes-tier-setup" is supposed to document.
+"hermes-setup" is supposed to document.
 
 ---
 

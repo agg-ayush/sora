@@ -17,37 +17,37 @@ config/     config.yaml.template, env.template, zshrc-snippet.sh (NO secrets)
 ## Install (new machine)
 
 ```bash
-git clone git@github.com:agg-ayush/hermes-tier-setup.git ~/hermes-tier-setup
+git clone git@github.com:agg-ayush/hermes-setup.git ~/hermes-setup
 
 # 1. Plugin → symlink into Hermes plugins
-ln -sf ~/hermes-tier-setup/plugin ~/.hermes/plugins/claude-orchestrate
+ln -sf ~/hermes-setup/plugin ~/.hermes/plugins/claude-orchestrate
 
 # 1b. pr-review-toolkit patch → copy the state-transition-reviewer into the
 # Claude Code plugin cache (adds the specialist + wires it into review-pr)
-cp ~/hermes-tier-setup/plugins/pr-review-toolkit/agents/state-transition-reviewer.md \
+cp ~/hermes-setup/plugins/pr-review-toolkit/agents/state-transition-reviewer.md \
    ~/.claude/plugins/cache/claude-plugins-official/pr-review-toolkit/*/agents/
-cp ~/hermes-tier-setup/plugins/pr-review-toolkit/commands/review-pr.md \
+cp ~/hermes-setup/plugins/pr-review-toolkit/commands/review-pr.md \
    ~/.claude/plugins/cache/claude-plugins-official/pr-review-toolkit/*/commands/
 
 # 2. Skills → symlink into Hermes skills
 mkdir -p ~/.hermes/skills/autonomous-ai-agents
-ln -sf ~/hermes-tier-setup/skills/tier1-suborchestration ~/.hermes/skills/autonomous-ai-agents/
-ln -sf ~/hermes-tier-setup/skills/tier2-orchestration ~/.hermes/skills/autonomous-ai-agents/
+ln -sf ~/hermes-setup/skills/tier1-suborchestration ~/.hermes/skills/autonomous-ai-agents/
+ln -sf ~/hermes-setup/skills/tier2-orchestration ~/.hermes/skills/autonomous-ai-agents/
 
 # 3. Scripts → symlink into Hermes scripts
 mkdir -p ~/.hermes/scripts
-ln -sf ~/hermes-tier-setup/scripts/orphan-reaper.py ~/.hermes/scripts/
+ln -sf ~/hermes-setup/scripts/orphan-reaper.py ~/.hermes/scripts/
 
 # 3b. Hooks → symlink into ~/.hermes/agent-hooks/ (Hermes hook scripts live
 # there, NOT in ~/.hermes/scripts/). The config template's hooks section
 # points at these paths.
 mkdir -p ~/.hermes/agent-hooks
-ln -sf ~/hermes-tier-setup/scripts/subagent-ledger-hook.py ~/.hermes/agent-hooks/subagent-ledger.py
-ln -sf ~/hermes-tier-setup/scripts/aws-token-refresh-hook.sh ~/.hermes/agent-hooks/aws-token-refresh.sh
+ln -sf ~/hermes-setup/scripts/subagent-ledger-hook.py ~/.hermes/agent-hooks/subagent-ledger.py
+ln -sf ~/hermes-setup/scripts/aws-token-refresh-hook.sh ~/.hermes/agent-hooks/aws-token-refresh.sh
 
 # 4. Config — copy templates and fill in
-cp ~/hermes-tier-setup/config/config.yaml.template ~/.hermes/config.yaml
-cp ~/hermes-tier-setup/config/env.template ~/.hermes/.env
+cp ~/hermes-setup/config/config.yaml.template ~/.hermes/config.yaml
+cp ~/hermes-setup/config/env.template ~/.hermes/.env
 # edit ~/.hermes/.env with real API keys
 
 # 4b. kimi-k3 isolated config — the plugin's fireworks path uses
@@ -63,7 +63,7 @@ cp ~/hermes-tier-setup/config/env.template ~/.hermes/.env
 # on first run — no manual step needed.
 
 # 5. Shell aliases — add holo function to ~/.zshrc
-cat ~/hermes-tier-setup/config/zshrc-snippet.sh >> ~/.zshrc
+cat ~/hermes-setup/config/zshrc-snippet.sh >> ~/.zshrc
 source ~/.zshrc
 
 # 6. Kanban boards — bind each repo to its board (adjust paths for your machine)

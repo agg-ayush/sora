@@ -31,11 +31,13 @@ authors it.
   pings the human on Telegram, stops at human merge approval, self-terminates
   when done. Heartbeats kanban to keep the claim alive (TTL 900s).
   Never writes the implementation itself.
-- **T3** — the executor: the Claude Code CLI (routed to kimi-k3 via Fireworks'
-  Anthropic-compatible endpoint) or the Codex CLI, driven in tmux by the
-  `claude-orchestrate` plugin. The only layer that reads or writes repo files. One
-  session per work unit, whatever the kind: design, design review, implementation,
-  tests, code review. Reports `DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED`.
+- **T3** — the executor: the Codex CLI or the Claude Code CLI, driven in tmux by
+  the `claude-orchestrate` plugin, on a prescribed per-phase route: design author
+  = Claude Code/Kimi K3 via Fireworks, implementation = Codex `gpt-6-sol`,
+  code review = Claude Code `claude-group/claude-opus-5-5` via TrueFoundry. The
+  only layer that reads or writes repo files. One session per work unit, whatever
+  the kind: design, design review, implementation, tests, code review. Reports
+  `DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED`.
 - **T0** — Telegram thin router (deferred, not built).
 
 **Coordination backend:** Hermes-native **kanban** (`hermes kanban` CLI, SQLite in
@@ -163,17 +165,23 @@ cleanup (branch/worktree, `kanban complete` + `reclaim`) → self-terminate.
 
 ## Auth fallback
 
-Probe + fallback routing per the tier2 skill's auth-fallback principle (probe via
-the plugin with `model_provider=fireworks`, never raw `claude -p`). The routing
-summary, in short: coding + T1 author/review → `executor=codex`; T2 code review →
-`requesting-code-review` via delegate_task (kimi-k3).
+Probe per the tier2 skill's principle #7 — Claude steps via the plugin with the
+step's own `model_provider` (never raw `claude -p`), Codex steps via the
+configured executor/model (`codex exec -m <bare-id>`). The routing summary, in short:
+implementation → `executor=codex, model=gpt-6-sol`; code review → `executor=claude,
+model=claude-group/claude-opus-5-5, model_provider=truefoundry` (fails closed
+without TFY auth); design author → Kimi K3 via Fireworks. A dead route is a STOP
+for explicit approval — never an automatic model-group/billing switch.
 
 **Effort (defaults):** T2 design author/reviser = `effort=high` (design is
-judgment-heavy, kimi-k3 via Fireworks). T2 coding sessions = `effort=medium`. T2
-code review = `effort=medium`.
+judgment-heavy, kimi-k3 via Fireworks). T2 implementation (Codex `gpt-6-sol`) =
+Codex's configured `model_reasoning_effort=high` (`~/.codex/config.toml`) — the
+plugin's `effort` flag is a Claude-CLI option and does not apply to codex
+sessions. T2 code review (Opus 5.5 via TrueFoundry) = `effort=medium`.
 A *thinking* session is not a stalled one — stall detection ignores file-staleness
 when the pane shows an activity indicator. Genuine stall (no indicator + no file
-change) → `interrupt` (Esc) once → `diagnose` → fall back to Codex.
+change) → `interrupt` (Esc) once → `diagnose` → STOP and escalate; switching
+executors needs explicit approval (above).
 
 ## State-transition review
 

@@ -1,18 +1,18 @@
 ---
 name: aws-devfactory-operations
-description: "DevFactory AWS ops - refresh saml2aws creds, audit drift."
-version: 0.1.0
+description: "DevFactory AWS ops - OneLogin credential refresh, audit drift."
+version: 0.2.0
 author: Ayush Aggarwal (agg-ayush), Hermes Agent
 license: MIT
 platforms: [macos]
 metadata:
   hermes:
-    tags: [aws, saml2aws, drift, iam]
+    tags: [aws, onelogin, drift, iam]
 ---
 
 # AWS DevFactory Operations
 
-Umbrella for recurring DevFactory AWS operational work: refreshing expired CLI credentials via saml2aws, rotating IAM credentials behind a service/CI workflow, auditing worker-fleet drift (CFN vs AMI vs live checkout), producer-cred injection for on-box batch submits, and restructuring around heuristic-bait Semgrep findings.
+Umbrella for recurring DevFactory AWS operational work: refreshing expired CLI credentials via OneLogin OIDC (`trilogy-aws-key.py`; saml2aws/Keycloak RETIRED Oct 2026), rotating IAM credentials behind a service/CI workflow, auditing worker-fleet drift (CFN vs AMI vs live checkout), producer-cred injection for on-box batch submits, and restructuring around heuristic-bait Semgrep findings.
 
 ## When to Use
 
@@ -24,7 +24,7 @@ Umbrella for recurring DevFactory AWS operational work: refreshing expired CLI c
 
 ## Procedure
 
-### Refresh expired CLI creds (references/aws-saml2aws-refresh.md)
+### Refresh expired CLI creds (references/aws-onelogin-oidc-refresh.md)
 
 90% of cases:
 
@@ -39,7 +39,9 @@ env -i HOME="$HOME" PATH="/opt/homebrew/bin:/usr/bin:/bin" aws sts get-caller-id
 # expect: arn:aws:sts::<aws-account>:assumed-role/RAM-AWS-Prod-DevFactory-devflows-Admin/ayushaggarwal
 ```
 
-Token is a **1-hour session** (`session-duration 3600`, can't be raised). Long-running scripts must call the refresh script **inside the loop, once per iteration**, make each iteration's AWS work idempotent (`aws s3 sync`, check-before-write), and prefer sequential-with-refresh over a parallel fan-out that all dies at the 1-hour mark. A `post_tool_call` hook at `~/.hermes/agent-hooks/aws-token-refresh.sh` auto-fires the refresh on expiry errors — wait ~10-15s and retry.
+Token mechanics: the STS session is 1 hour; the OneLogin id_token behind it lives ~120 min and is cached at `~/.aws/onelogin-id-token.json` — while valid, every refresh is pure STS (no OneLogin auth). Hourly `keep-hot` hermes crons (`sora-aws-keep-hot` / `mac-aws-keep-hot`) refresh inside that window so nothing lapses while the host is up. Cold start after a >2h gap needs ONE interactive `--headless` login (URL → user's browser → paste callback); the account's only MFA factor is WebAuthn (Touch ID) — the password grant is rejected with "MFA is required" and there is no OTP path. Long-running scripts must call the refresh script **inside the loop, once per iteration**, make each iteration's AWS work idempotent (`aws s3 sync`, check-before-write), and prefer sequential-with-refresh over a parallel fan-out that all dies at the 1-hour mark. A `post_tool_call` hook at `~/.hermes/agent-hooks/aws-token-refresh.sh` auto-fires the refresh on expiry errors — wait ~10-15s and retry.
+
+**Two accounts (Oct 2026), explicit only:** the wrapper maintains exactly two sections in `~/.aws/credentials` — `[devflows]` = RAM-AWS-Prod-DevFactory-devflows-Admin (account <aws-account>) and `[eswlegal]` = RAM-AWS-Int-CentralFunctions-ESWLegal-Admin (account <aws-account>). There is **no `[trilogy]`/`[default]` alias** — every aws call must name `--profile devflows` or `--profile eswlegal` explicitly (bare `aws` on sora falls through to the EC2 instance SSM role; on Mac it errors). NEVER mint a role into the other profile's name; historical task records on boards may still mention `--profile trilogy` (pre-rename records, all done/archived).
 
 ### IAM credential audit & rotation (references/aws-iam-credential-rotation.md)
 

@@ -43,21 +43,21 @@ since.
    `aws-iam-credential-rotation` pitfall on this same failure mode):
    ```bash
    unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_SECURITY_TOKEN AWS_PROFILE
-   aws sts get-caller-identity --profile trilogy --query Arn --output text
+   aws sts get-caller-identity --profile devflows --query Arn --output text
    ```
 2. **Find the stacks** — CFN stack names for these fleets don't always match
    the component name obviously; list and grep rather than guessing:
    ```bash
-   aws cloudformation list-stacks --profile trilogy --region <region> \
+   aws cloudformation list-stacks --profile devflows --region <region> \
      --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE \
      --query "StackSummaries[?contains(StackName,'<component>')].[StackName,StackStatus]" --output table
    ```
 3. **Read CFN params** (intent) and **AMI lineage** (bake time) for both the
    baseline and fleet stacks:
    ```bash
-   aws cloudformation describe-stacks --profile trilogy --stack-name <stack> \
+   aws cloudformation describe-stacks --profile devflows --stack-name <stack> \
      --query "Stacks[0].Parameters[].[ParameterKey,ParameterValue]" --output text
-   aws ec2 describe-images --profile trilogy --image-ids <ami-id> \
+   aws ec2 describe-images --profile devflows --image-ids <ami-id> \
      --query "Images[0].[ImageId,Name,CreationDate]" --output text
    ```
 4. **Find the actually-running instance(s)** — don't assume the fleet's
@@ -65,7 +65,7 @@ since.
    note which AMI each one *actually* launched from (can differ from the
    stack's current `GoldenAmiId` if it launched before the last AMI update):
    ```bash
-   aws ec2 describe-instances --profile trilogy \
+   aws ec2 describe-instances --profile devflows \
      --filters "Name=tag:aws:cloudformation:stack-name,Values=<baseline-stack>,<fleet-stack>" \
                 "Name=instance-state-name,Values=running,pending" \
      --query "Reservations[].Instances[].[InstanceId,ImageId,LaunchTime,Tags[?Key=='Name'].Value|[0]]" --output text
@@ -73,13 +73,13 @@ since.
 5. **Query the live box's actual git state via SSM** (works for Windows
    instances with the SSM agent — no RDP/interactive session needed):
    ```bash
-   CMD_ID=$(aws ssm send-command --profile trilogy \
+   CMD_ID=$(aws ssm send-command --profile devflows \
      --instance-ids <instance-id> \
      --document-name "AWS-RunPowerShellScript" \
      --parameters '{"commands":["cd C:\\<repo-worker-path>\\<repo-name>; Write-Output (\"BRANCH: \" + (git rev-parse --abbrev-ref HEAD)); Write-Output (\"HEAD: \" + (git rev-parse HEAD)); git log -1 --format=\"%ci %h %s\""]}' \
      --query "Command.CommandId" --output text)
    sleep 8
-   aws ssm get-command-invocation --profile trilogy --command-id "$CMD_ID" --instance-id <instance-id> \
+   aws ssm get-command-invocation --profile devflows --command-id "$CMD_ID" --instance-id <instance-id> \
      --query "[Status,StandardOutputContent,StandardErrorContent]" --output text
    ```
 6. **Quantify the drift against the repo**, not just "is it behind":
@@ -219,7 +219,7 @@ access.
 Diagnose the same way as code drift — compare live vs. template, don't
 assume the template is what's deployed:
 ```bash
-aws iam get-role-policy --profile trilogy --role-name <worker-role> \
+aws iam get-role-policy --profile devflows --role-name <worker-role> \
   --policy-name <policy-name> --query "PolicyDocument.Statement[].Sid" --output json
 # compare against what main's template actually grants:
 git show origin/main:infra/<component>/<baseline-template>.yaml | grep -A8 "Sid: ReadSecrets"
@@ -495,7 +495,7 @@ to exercise, the canonical verification is `aws cloudformation
 validate-template`, not a fabricated ad-hoc script:
 
 ```bash
-aws cloudformation validate-template --profile trilogy --region <region> \
+aws cloudformation validate-template --profile devflows --region <region> \
   --template-body "file://<path>.yaml" --query "length(Parameters)" --output text
 ```
 

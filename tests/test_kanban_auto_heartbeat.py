@@ -131,6 +131,7 @@ class KanbanAutoHeartbeatTest(unittest.TestCase):
         """_gate heartbeats (forced) before computing the composite verdict."""
         self._write_meta("t-gate", {
             "task_id": "t-gate", "kanban_task_id": "KB-77", "kanban_board": "b1",
+            "phase": "3",
         })
         calls = []
         def fake_run(cmd, timeout=None):
