@@ -1,100 +1,55 @@
 #!/usr/bin/env bash
-# Refresh AWS creds on sora (Linux), fully unattended.
-# Two providers, two accounts:
-#   [devflows] = RAM-AWS-Prod-DevFactory-devflows-Admin (<aws-account>)
-#     -> saml2aws via KeyCloak (tmux-driven, password from
-#        ~/.config/saml2aws/.trilogy-password). Password-only, no MFA,
-#        zero-touch. saml2aws writes [trilogy]; we rename it to [devflows].
-#   [eswlegal] = RAM-AWS-Int-CentralFunctions-ESWLegal-Admin (<aws-account>)
-#     -> trilogy-aws-key.py OneLogin STS mint, best-effort: works only while
-#        the cached id_token (~/.aws/onelogin-id-token.json, 2h lifetime) is
-#        valid; when it lapses it needs ONE interactive --headless login
-#        (WebAuthn/Touch ID — no unattended path exists) and the keep-hot
-#        cron alerts Telegram with the command. ESWLegal is NOT offered via
-#        KeyCloak SAML (assertion holds only the DevFactory role).
+# Refresh AWS creds on sora (Linux). PRIMARY: saml2aws/KeyCloak, plain
+# non-interactive flags (--skip-prompt --password from the 0600 file) — no tmux.
+# FALLBACK for eswlegal (automatic): OneLogin OIDC via trilogy-aws-key.py while
+# the cached id_token (~/.aws/onelogin-id-token.json, ~2h lifetime) is valid.
+# KeyCloak/saml2aws is being RETIRED by Trilogy — when it dies the saml2aws
+# mints fail and OneLogin becomes the sole path (eswlegal then needs periodic
+# --headless WebAuthn logins; the keep-hot alert says so).
+# Profiles: [devflows] = RAM-AWS-Prod-DevFactory-devflows-Admin (<aws-account>)
+#           [eswlegal] = RAM-AWS-Int-CentralFunctions-ESWLegal-Admin (<aws-account>)
 # No default/trilogy alias: every aws call must name --profile explicitly.
 set -u
 
 LOG="/tmp/aws-creds-refresh.log"
 PASS_FILE="$HOME/.config/saml2aws/.trilogy-password"
-KEY="trilogy"
+DF_ARN="arn:aws:iam::<aws-account>:role/RAM-AWS-Prod-DevFactory-devflows-Admin"
+ESW_ARN="arn:aws:iam::<aws-account>:role/RAM-AWS-Int-CentralFunctions-ESWLegal-Admin"
+LOGIN="ayushaggarwal018@gmail.com"
 
 log() { echo "[$(date '+%H:%M:%S')] $*" >> "$LOG"; }
 
-# ---------- 1. devflows via saml2aws (required) ----------
-if [ ! -r "$PASS_FILE" ]; then
-  log "FAIL: no password file $PASS_FILE"
-  echo "AWS refresh FAILED: password file missing" >&2
-  exit 2
-fi
+mint_saml() {  # mint_saml <role-arn> <profile> — non-interactive KeyCloak mint
+  [ -r "$PASS_FILE" ] || return 2
+  saml2aws login -a trilogy \
+    --role "$1" -p "$2" \
+    --skip-prompt --force \
+    --username "$LOGIN" --password "$(cat "$PASS_FILE")" \
+    >/dev/null 2>>"$LOG"
+}
 
-SESSION="saml2aws-refresh"
-tmux kill-session -t "$SESSION" 2>/dev/null || true
-# plain shell + send-keys (the command-form of new-session dies instantly here)
-tmux new-session -d -s "$SESSION" -x 200 -y 50
-sleep 1
-tmux send-keys -t "$SESSION" "saml2aws login -a $KEY --force" Enter
-sleep 3
-# username prompt: accept the default from ~/.saml2aws
-tmux send-keys -t "$SESSION" Enter
-sleep 2
-tmux send-keys -t "$SESSION" -l "$(cat "$PASS_FILE")"
-tmux send-keys -t "$SESSION" Enter
-
-ok=0
-deadline=$((SECONDS + 90))
-while (( SECONDS < deadline )); do
-  pane=$(tmux capture-pane -t "$SESSION" -p 2>/dev/null || true)
-  case "$pane" in
-    *"Logged in as:"*) ok=1; break ;;
-    *"EXIT=1"*|*"Error validating"*|*"failed to authenticate"*) break ;;
-  esac
-  sleep 2
-done
-tmux kill-session -t "$SESSION" 2>/dev/null || true
-
-if (( ok != 1 )); then
-  log "FAIL: saml2aws login did not complete"
-  echo "AWS refresh FAILED (saml2aws devflows)" >&2
-  exit 1
-fi
-
-# rename saml2aws's [trilogy] section -> [devflows]
-python3 - <<'PYEOF'
-import configparser, os
-p = os.path.expanduser("~/.aws/credentials")
-c = configparser.ConfigParser(); c.read(p)
-if "trilogy" in c:
-    c["devflows"] = dict(c["trilogy"])
-    del c["trilogy"]
-c.pop("default", None)
-with open(p, "w") as f: c.write(f)
-os.chmod(p, 0o600)
-PYEOF
-log "devflows refreshed via saml2aws"
-
-# ---------- 2. eswlegal via OneLogin (best-effort) ----------
-ESW="stale"
-TOKEN_OK=$(python3 -c "
+token_valid() {
+  python3 -c "
 import json,base64,time
 try:
     d=json.load(open('$HOME/.aws/onelogin-id-token.json'))
     p=d['id_token'].split('.')[1]; p+='='*(-len(p)%4)
     c=json.loads(base64.urlsafe_b64decode(p))
-    print(1 if c.get('exp',0)-time.time() > 900 else 0)
+    raise SystemExit(0 if c.get('exp',0)-time.time() > 900 else 1)
 except Exception:
-    print(0)
-" 2>/dev/null || echo 0)
+    raise SystemExit(1)
+" 2>/dev/null
+}
 
-if [ "$TOKEN_OK" = "1" ]; then
+mint_esw_onelogin() {
+  token_valid || return 2
+  local out
   out=$(python3 "$HOME/.hermes/scripts/trilogy-aws-key.py" \
     --credential-process --quiet \
     --role admin --select-role "RAM-AWS-Int-CentralFunctions-ESWLegal-Admin" \
-    --profile-name tmpmint --login ayushaggarwal018@gmail.com \
-    --password "$(cat "$PASS_FILE")" 2>/dev/null)
-  if [ -n "$out" ] && printf '%s' "$out" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then
-    ESW="ok"
-    printf '%s' "$out" | python3 -c '
+    --profile-name tmpmint --login "$LOGIN" \
+    --password "$(cat "$PASS_FILE")" 2>/dev/null) || return 1
+  printf '%s' "$out" | python3 -c '
 import json, sys, configparser, os
 blob = json.load(sys.stdin)
 p = os.path.expanduser("~/.aws/credentials")
@@ -106,19 +61,45 @@ c["eswlegal"] = {
 }
 with open(p, "w") as f: c.write(f)
 os.chmod(p, 0o600)
-'
-    log "eswlegal refreshed via OneLogin"
+' 2>/dev/null
+}
+
+# ---------- devflows ----------
+if ! mint_saml "$DF_ARN" devflows; then
+  log "FAIL: devflows saml2aws exit $? — KeyCloak retired/unreachable; leaving existing creds"
+  echo "AWS refresh FAILED (devflows saml2aws exit $?) — see $LOG" >&2
+  exit 1
+fi
+log "devflows refreshed via saml2aws"
+
+# ---------- eswlegal ----------
+ESW_SRC="saml2aws"
+esw_saml_rc=0
+mint_saml "$ESW_ARN" eswlegal || esw_saml_rc=$?
+if (( esw_saml_rc != 0 )); then
+  log "eswlegal saml2aws exit $esw_saml_rc — falling back to OneLogin"
+  if mint_esw_onelogin; then
+    ESW_SRC="onelogin"
+    log "eswlegal refreshed via OneLogin fallback"
   else
-    log "eswlegal mint failed (id_token valid but mint error)"
+    log "FAIL: eswlegal both paths failed — needs one --headless onelogin login"
+    echo "AWS refresh: eswlegal needs a headless onelogin login on this host" >&2
+    exit 3
   fi
-else
-  log "eswlegal skipped: OneLogin id_token expired/lapsed"
 fi
 
-# ---------- done ----------
-if [ "$ESW" = "ok" ]; then
-  echo "AWS credentials OK (devflows via saml2aws, eswlegal via onelogin)"
-else
-  echo "AWS credentials OK (devflows via saml2aws; eswlegal STALE - needs one --headless onelogin login)"
-fi
-exit 0
+# keep exactly devflows + eswlegal; drop anything saml2aws wrote under other names
+python3 - <<'PYEOF'
+import configparser, os
+p = os.path.expanduser("~/.aws/credentials")
+c = configparser.ConfigParser(); c.read(p)
+keep = {"devflows", "eswlegal"}
+for s in list(c.sections()):
+    if s not in keep:
+        del c[s]
+os.makedirs(os.path.dirname(p), exist_ok=True)
+with open(p, "w") as f: c.write(f)
+os.chmod(p, 0o600)
+PYEOF
+
+echo "AWS credentials OK (devflows + eswlegal via saml2aws/$ESW_SRC)"
