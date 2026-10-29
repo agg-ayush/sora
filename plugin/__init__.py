@@ -299,7 +299,7 @@ def _start(args: dict) -> dict:
 
     opus_tf_route = (
         executor == "claude" and model_provider == "truefoundry"
-        and model == "claude-group/claude-opus-5-5"
+        and model in {"claude-group/claude-opus-5-5", "gemini-group/gemini-4-argon"}
     )
     status_instruction = (
         f"\n\nAt each phase boundary, write a single word to {shlex.quote(status_path.as_posix())}: "
@@ -377,7 +377,12 @@ def _start(args: dict) -> dict:
         if opus_tf_route:
             # A safety-flagged request stops instead of silently switching models.
             session_settings["switchModelsOnFlag"] = False
-        deny_settings.write_text(json.dumps(session_settings), encoding="utf-8")
+            # The TF routes run the pinned CLI with the default config dir,
+            # which hasn't trust-seeded arbitrary launch dirs. Accept both the
+            # trust dialog and bypass-permissions for this launch only.
+            session_settings.setdefault("projects", {})[str(Path(workdir).resolve())] = {"hasTrustDialogAccepted": True}
+            session_settings["bypassPermissionsModeAccepted"] = True
+        deny_settings.write_text(json.dumps(session_settings), "utf-8")
         exec_cmd += f" --settings {shlex.quote(str(deny_settings))}"
         if opus_tf_route:
             # Per-session sandbox grant: the artifact dir lives outside the
@@ -490,12 +495,13 @@ def _start(args: dict) -> dict:
             )
         else:
             tf_auth = ""
-            if model == "claude-group/claude-opus-5-5":
-                # Opus review route: the spawned session has no TF login, so
+            if model in {"claude-group/claude-opus-5-5", "gemini-group/gemini-4-argon"}:
+                # TF anthropic-protocol review routes (Opus, argon): the spawned
+                # session has no TF login, so
                 # route via env. References $TFY_API_KEY (read from the handoff
                 # FIFO below) rather than inlining the secret; must precede env_scrub.
                 if not os.environ.get("TFY_API_KEY"):
-                    return {"ok": False, "error": "model=claude-group/claude-opus-5-5 via truefoundry requires TFY_API_KEY in env; failing closed"}
+                    return {"ok": False, "error": f"model={model} via truefoundry requires TFY_API_KEY in env; failing closed"}
                 tf_auth = (
                     "export ANTHROPIC_BASE_URL=https://<llm-gateway>.truefoundry.cloud/api/llm && "
                     'export ANTHROPIC_AUTH_TOKEN="$TFY_API_KEY" && '
@@ -515,6 +521,22 @@ def _start(args: dict) -> dict:
             )
     fifo_path: Path | None = None
     if opus_tf_route:
+        # Trust-seed the launch dir in the pinned CLI's default config
+        # (~/.claude.json): the trust dialog reads hasTrustDialogAccepted from
+        # there, not from --settings, and an unattended spawn dies on it.
+        try:
+            cc_state = Path.home() / ".claude.json"
+            try:
+                cc_existing = json.loads(cc_state.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                cc_existing = {}
+            cc_projs = cc_existing.setdefault("projects", {})
+            cc_dir = str(Path(rundir).resolve())
+            if not cc_projs.get(cc_dir, {}).get("hasTrustDialogAccepted"):
+                cc_projs[cc_dir] = {"hasTrustDialogAccepted": True}
+                cc_state.write_text(json.dumps(cc_existing, indent=2), encoding="utf-8")
+        except OSError as exc:
+            return {"ok": False, "error": f"trust-seed of {rundir} failed ({type(exc).__name__}); failing closed"}
         # TFY_API_KEY arrives over a one-shot private FIFO, never via argv.
         try:
             fifo_dir = _secret_fifo_dir().resolve()
