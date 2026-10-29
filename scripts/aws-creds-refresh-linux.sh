@@ -41,20 +41,20 @@ except Exception:
 " 2>/dev/null
 }
 
-mint_esw_onelogin() {
+mint_onelogin() {  # mint_onelogin <select-role> <profile> — OneLogin OIDC STS mint
   token_valid || return 2
   local out
   out=$(python3 "$HOME/.hermes/scripts/trilogy-aws-key.py" \
     --credential-process --quiet \
-    --role admin --select-role "RAM-AWS-Int-CentralFunctions-ESWLegal-Admin" \
+    --role admin --select-role "$1" \
     --profile-name tmpmint --login "$LOGIN" \
     --password "$(cat "$PASS_FILE")" 2>/dev/null) || return 1
-  printf '%s' "$out" | python3 -c '
-import json, sys, configparser, os
+  printf '%s' "$out" | PROFILE="$2" python3 -c '
+import json, sys, os, configparser
 blob = json.load(sys.stdin)
 p = os.path.expanduser("~/.aws/credentials")
 c = configparser.ConfigParser(); c.read(p)
-c["eswlegal"] = {
+c[os.environ["PROFILE"]] = {
     "aws_access_key_id": blob["AccessKeyId"],
     "aws_secret_access_key": blob["SecretAccessKey"],
     "aws_session_token": blob["SessionToken"],
@@ -64,29 +64,33 @@ os.chmod(p, 0o600)
 ' 2>/dev/null
 }
 
-# ---------- devflows ----------
-if ! mint_saml "$DF_ARN" devflows; then
-  log "FAIL: devflows saml2aws exit $? — KeyCloak retired/unreachable; leaving existing creds"
-  echo "AWS refresh FAILED (devflows saml2aws exit $?) — see $LOG" >&2
-  exit 1
-fi
-log "devflows refreshed via saml2aws"
-
-# ---------- eswlegal ----------
-ESW_SRC="saml2aws"
-esw_saml_rc=0
-mint_saml "$ESW_ARN" eswlegal || esw_saml_rc=$?
-if (( esw_saml_rc != 0 )); then
-  log "eswlegal saml2aws exit $esw_saml_rc — falling back to OneLogin"
-  if mint_esw_onelogin; then
-    ESW_SRC="onelogin"
-    log "eswlegal refreshed via OneLogin fallback"
+# refresh <role-arn> <select-role> <profile>: saml2aws first, OneLogin fallback.
+# Both roles map to the same AD user — identical method priority for both.
+refresh() {  # returns 0 on success (either source), nonzero if both fail
+  local arn="$1" sel="$2" profile="$3" rc=0 src="saml2aws"
+  mint_saml "$arn" "$profile" || rc=$?
+  if (( rc != 0 )); then
+    log "$profile saml2aws exit $rc — falling back to OneLogin"
+    if mint_onelogin "$sel" "$profile"; then
+      src="onelogin"
+      log "$profile refreshed via OneLogin fallback"
+    else
+      log "FAIL: $profile both paths failed — needs one --headless onelogin login"
+      return 3
+    fi
   else
-    log "FAIL: eswlegal both paths failed — needs one --headless onelogin login"
-    echo "AWS refresh: eswlegal needs a headless onelogin login on this host" >&2
-    exit 3
+    log "$profile refreshed via saml2aws"
   fi
-fi
+  SOURCES[$profile]="$src"
+  return 0
+}
+
+declare -A SOURCES
+
+refresh "$DF_ARN" "RAM-AWS-Prod-DevFactory-devflows-Admin" devflows || DF_RC=$? || true
+DF_RC=${DF_RC:-0}
+refresh "$ESW_ARN" "RAM-AWS-Int-CentralFunctions-ESWLegal-Admin" eswlegal || ESW_RC=$? || true
+ESW_RC=${ESW_RC:-0}
 
 # keep exactly devflows + eswlegal; drop anything saml2aws wrote under other names
 python3 - <<'PYEOF'
@@ -102,4 +106,9 @@ with open(p, "w") as f: c.write(f)
 os.chmod(p, 0o600)
 PYEOF
 
-echo "AWS credentials OK (devflows + eswlegal via saml2aws/$ESW_SRC)"
+if (( DF_RC != 0 || ESW_RC != 0 )); then
+  echo "AWS refresh: one or both profiles need a headless onelogin login on this host (see $LOG)" >&2
+  exit 3
+fi
+
+echo "AWS credentials OK (devflows via ${SOURCES[devflows]}, eswlegal via ${SOURCES[eswlegal]})"
