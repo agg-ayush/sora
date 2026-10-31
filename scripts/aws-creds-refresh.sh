@@ -5,7 +5,7 @@
 # Maintains TWO account profiles, both minted from the same cached id_token (pure STS):
 #   [devflows] = RAM-AWS-Prod-DevFactory-devflows-Admin
 #   [eswlegal] = RAM-AWS-Int-CentralFunctions-ESWLegal-Admin
-# [trilogy] + [default] mirror devflows for legacy/bare-aws compatibility.
+# No default/trilogy alias: every aws call must name --profile devflows|eswlegal explicitly.
 # --force bypasses the min-refresh-time skip.
 set -u
 
@@ -52,7 +52,7 @@ if [ -z "$B" ] || ! printf '%s' "$B" | python3 -c 'import json,sys; json.load(sy
   exit 1
 fi
 
-# write profiles: devflows + eswlegal; trilogy/default mirror devflows
+# write profiles: devflows + eswlegal only (no default/trilogy alias)
 A="$A" B="$B" python3 -c '
 import json, os, configparser
 df = json.loads(os.environ["A"])
@@ -68,8 +68,8 @@ def sec(b):
     }
 c["devflows"] = sec(df)
 c["eswlegal"] = sec(es)
-c["trilogy"] = sec(df)
-c["default"] = sec(df)
+for legacy in ("trilogy", "default"):
+    c.pop(legacy, None)
 os.makedirs(os.path.dirname(p), exist_ok=True)
 with open(p, "w") as f:
     c.write(f)
