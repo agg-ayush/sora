@@ -253,6 +253,11 @@ def _start(args: dict) -> dict:
         return {"ok": False, "error": f"invalid executor: {executor!r} (must be 'claude' or 'codex')"}
     if model_provider not in {"truefoundry", "fireworks", "seatbelt"}:
         return {"ok": False, "error": f"invalid model_provider: {model_provider!r} (must be 'truefoundry', 'fireworks' or 'seatbelt')"}
+    if model_provider == "truefoundry" and executor == "claude" and not model:
+        # Without a pinned model the claude CLI falls back to its own default,
+        # which rides the TF anthropic endpoint as a bare id and bills as
+        # anthropic-primary. Every TF claude session must pin explicitly.
+        return {"ok": False, "error": "model_provider=truefoundry with executor=claude requires an explicit model (e.g. gemini-group/gemini-4-argon); refusing to launch with the CLI's default"}
     if effort and effort not in {"low", "medium", "high", "xhigh", "max"}:
         return {"ok": False, "error": f"invalid effort: {effort!r}"}
     seatbelt_model = None
