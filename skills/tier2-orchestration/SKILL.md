@@ -1066,19 +1066,6 @@ the files you actually changed, and never `git add -A`/`git add .` in a repo
 where kanban workers may be running concurrently (it will sweep their worktree
 into your commit).
 -->
-<!-- LESSON: a T2 claude_orchestrate session can come up on Claude Teams OAuth
-even with model_provider=truefoundry, and stall dead.
-Symptom: pane shows "Your organization has disabled Claude subscription access
-for Claude Code · Use an Anthropic API key instead" and the session sits at an
-empty prompt ("Cooked for 0s · done") without working. Cause: ~/.claude.json has
-an oauthAccount entry, and that OAuth token can win over the TF gateway env.
-Diagnosis only — never hand-fix by relaunching tmux with raw TF env and a
-self-chosen model (that bypasses the pinned route, switches the billing group,
-and exposes credentials in the tmux command line). For the scoped Opus review
-route the plugin already injects TF auth and fails closed (Phase 3.3 step 1);
-any other route hitting this stall means that route's auth is broken — STOP
-and escalate per principle #7, do not improvise a replacement launch.
--->
 <!-- LESSON: tmux `mouse on` alone does NOT wire the scroll wheel — you also need terminal-features.
 To make the mouse wheel scroll a tmux pane (e.g. Claude Code transcript through
 ttyd+xterm.js), `set -g mouse on` is necessary but NOT sufficient on tmux 3.4.
