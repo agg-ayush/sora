@@ -14,7 +14,7 @@ metadata:
 
 Drive ONE issue from a raw task to a human-approved GitHub PR merge. You own TWO
 phases: (1) **design** — author a design doc via an Opus 5.5 session (seatbelt,
-high effort) and cross-engine review it via a Gemini 4 Argon session (3-round cap),
+high effort) and cross-engine review it via a GLM-5.3 session (3-round cap),
 and (2) **implementation** — turn the accepted design into code via a CLI coding
 agent in an isolated worktree, gate it, and raise a PR. You are the supervisor:
 you coordinate, you never write the design or the implementation yourself.
@@ -100,9 +100,9 @@ STOP and ask, same as any other unstated-in-brief ambiguity.
    silent switch.** Before spawning a session, probe its prescribed route with a
    trivial prompt ("reply PONG") and a short timeout. Claude Code steps: probe
    via the plugin with the same `model_provider` the session will use
-   (`seatbelt` for the design author and implementation, `truefoundry` for the
-   Argon design/code reviews). Do
-   NOT probe a provider path with a raw `claude -p` — for the legacy Fireworks route that checks the
+   (`seatbelt` for the design author and implementation, `fireworks` for the
+   GLM-5.3 design/code reviews). Do
+   NOT probe the Fireworks path with a raw `claude -p` — that checks the
    TF/Anthropic endpoint, not the Fireworks path, and reports the wrong model
    group (a false `claude-teams-group` alarm). Seatbelt steps probe with
    `model_provider=seatbelt` and the same `model` (`opus`/`sonnet`) the step
@@ -129,7 +129,7 @@ STOP and ask, same as any other unstated-in-brief ambiguity.
 10. **Design = judgment → use CLI coding-agent sessions, not inline reasoning.**
     Orchestrate an Opus 5.5 author session (`executor=claude`,
     `model_provider=seatbelt`, `model=opus`, `effort=high`)
-    and an Argon review session (`model_provider=truefoundry`, `model=gemini-group/gemini-4-argon`, cross-engine) via
+    and a GLM-5.3 review session (`model_provider=fireworks`, cross-group) via
     `claude_orchestrate`. Read
     the VERDICT file, never the design-doc body, into your own context. Author and
     reviewer MUST be different model families — never let the author review its own
@@ -238,10 +238,10 @@ target repo to ground the design; it does not write to it.
    routinely exceeds the TTL) — with `kanban_task_id` passed at `start`, the
    plugin auto-heartbeats the claim from inside `wait` (principle #2).
 
-**1b.2 Design review** (Gemini 4 Argon via TrueFoundry anthropic route, cross-engine):
+**1b.2 Design review** (GLM-5.3 via Fireworks, cross-group):
 1. `claude_orchestrate start` in the scratch dir (per Inputs), `executor=claude`,
-   `model_provider=truefoundry`, `model=gemini-group/gemini-4-argon` (the design
-   reviewer; the TF anthropic route pins env),
+   `model_provider=fireworks` (GLM-5.3 — the design reviewer; do NOT pass
+   `model`, the route pins GLM-5.3 via env),
    `kanban_task_id=<kanban task>` (+ `kanban_board=<slug>` when set — principle
    #2 auto-heartbeat). `task_id` e.g.
    `t2-<TASK_ID>-dreview`. Choose a `<verdict-path>` OUTSIDE any repo. Prompt
@@ -267,7 +267,7 @@ target repo to ground the design; it does not write to it.
      1b.1) with: "Read the design doc at `<doc-path>` and the blocking issues at
      `<issues-file>`. Revise the doc in place to address every blocking issue.
      Then set status complete + write DONE to your outcome file." Then run a
-     FRESH Argon review (1b.2 again, new review session — the reviewer is always
+     FRESH GLM review (1b.2 again, new review session — the reviewer is always
      fresh; only the author is retained). If the author session died since
      1b.1, start a new author with the same route + prompt it with the current
      doc and issues. **HARD LIMIT: at most 3
@@ -349,7 +349,7 @@ one died or hit a hard context wall.
      release/re-claim for it.
    - **Model route is prescribed, not chosen.** Launch exactly the route this
      step documents (here: seatbelt/Sonnet 5.5; other steps prescribe their
-     own — seatbelt/Opus design author, TF/Argon reviews). Never
+     own — seatbelt/Opus design author, Fireworks/GLM reviews). Never
      spontaneously pick a different model
      or silently switch model groups/billing routes — the same rule
      covers sessions you launch manually via tmux. There is no pre-approved
@@ -514,9 +514,10 @@ session** (not the implementer session):
    branch, not the trunk. Reviewing beyond the delta duplicates earlier rounds
    and scales cost with stack size instead of change size.
 1. `claude_orchestrate start` a Claude Code session (`executor=claude`,
-   `model_provider=truefoundry`, `model=gemini-group/gemini-4-argon` — the
-   independent code review runs on Argon via the TrueFoundry anthropic endpoint,
-   a distinct engine from the seatbelt/Sonnet implementer; pass
+   `model_provider=fireworks` — the independent code review runs on GLM-5.3 via
+   the Fireworks Anthropic-compatible endpoint, a distinct group from the
+   seatbelt/Sonnet implementer; do NOT pass `model`, the route pins GLM-5.3 via
+   env; pass
    `kanban_task_id`/`kanban_board` as everywhere else, principle #2) in the
    task's worktree (`workdir=<rundir>`). Prompt it to run the pr-review-toolkit
    the review over this unit's changes and write a structured verdict to a
@@ -685,7 +686,7 @@ minimal rework directly (read_file/patch) against the rejection's own spec.
    `pr-description-style`) to describe the NEW minimal mechanism. Never leave an
    over-built PR's original description in place after a rework — it no longer
    matches the diff and misleads the human reviewer.
-4. **Run one fresh independent code-review round** (Argon via TrueFoundry, `claude_orchestrate`)
+4. **Run one fresh independent code-review round** (GLM-5.3 via Fireworks, `claude_orchestrate`)
    against the reworked diff (`origin/<base>...HEAD`) before treating it as ready.
    A smaller diff is not itself proof of correctness — get an actual approved
    verdict on the NEW diff, same as any other Phase 3.3 review.
@@ -871,7 +872,7 @@ head are lost when the session ends.
   tree can be pointed at a different branch by a concurrent session by the time
   you get to verification, and a check against the wrong branch's files reports
   false failures that look like your own change regressed.
-- **(legacy route) The Fireworks/K3 path pre-seeds onboarding but NOT per-directory workspace
+- **The Fireworks/K3 path pre-seeds onboarding but NOT per-directory workspace
   trust — a session launched in a fresh worktree (or scratch dir) hangs on the
   first-run \"Is this a project you trust?\" TUI menu and exits with
   `outcome=null`, which looks identical to a silent crash.** Text `steer` cannot
