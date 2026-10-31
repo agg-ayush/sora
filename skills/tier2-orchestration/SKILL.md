@@ -14,7 +14,7 @@ metadata:
 
 Drive ONE issue from a raw task to a human-approved GitHub PR merge. You own TWO
 phases: (1) **design** — author a design doc via an Opus 5.5 session (seatbelt,
-high effort) and cross-engine review it via a GLM-5.3 session (3-round cap),
+high effort) and review it via a second Opus session (seatbelt, 3-round cap),
 and (2) **implementation** — turn the accepted design into code via a CLI coding
 agent in an isolated worktree, gate it, and raise a PR. You are the supervisor:
 you coordinate, you never write the design or the implementation yourself.
@@ -100,16 +100,17 @@ STOP and ask, same as any other unstated-in-brief ambiguity.
    silent switch.** Before spawning a session, probe its prescribed route with a
    trivial prompt ("reply PONG") and a short timeout. Claude Code steps: probe
    via the plugin with the same `model_provider` the session will use
-   (`seatbelt` for the design author and implementation, `fireworks` for the
-   GLM-5.3 design/code reviews). Do
-   NOT probe the Fireworks path with a raw `claude -p` — that checks the
+   (all steps seatbelt: `opus` for design author and design review, `sonnet`
+   for implementation and code review). Do
+   NOT probe the legacy Fireworks path with a raw `claude -p` — that checks the
    TF/Anthropic endpoint, not the Fireworks path, and reports the wrong model
    group (a false `claude-teams-group` alarm). Seatbelt steps probe with
    `model_provider=seatbelt` and the same `model` (`opus`/`sonnet`) the step
    will use. If the probe fails, do NOT
    fall back to another executor on your own — a switch changes the model group
-   and billing route, and the design phase's cross-engine split depends on the
-   groups being distinct. STOP and get explicit human approval before switching
+   and billing route. All T3 steps run seatbelt (`opus` design phases, `sonnet`
+   code phases); reviewer independence comes from a FRESH session, not a
+   different engine. STOP and get explicit human approval before switching
    any step's engine/group. The kanban claim is independent of the executor — an
    approved switch needs no release/re-claim.
    - **Stall handling:** `stalled` = pane shows NO activity indicator AND no
@@ -129,7 +130,7 @@ STOP and ask, same as any other unstated-in-brief ambiguity.
 10. **Design = judgment → use CLI coding-agent sessions, not inline reasoning.**
     Orchestrate an Opus 5.5 author session (`executor=claude`,
     `model_provider=seatbelt`, `model=opus`, `effort=high`)
-    and a GLM-5.3 review session (`model_provider=fireworks`, cross-group) via
+    and an Opus review session (`model_provider=seatbelt`, `model=opus`, fresh session) via
     `claude_orchestrate`. Read
     the VERDICT file, never the design-doc body, into your own context. Author and
     reviewer MUST be different model families — never let the author review its own
@@ -212,8 +213,8 @@ target repo to ground the design; it does not write to it.
    and a short timeout. If it errors or the session exits → the seatbelt path is
    down (most commonly: rc token stale vs TFY_API_KEY, or 403 not-a-member).
    STOP for explicit human approval before switching the author step to another
-   engine (cross-group — principle #7; a same-group author+reviewer split also
-   defeats the cross-engine review).
+   engine (principle #7). Reviewer independence is preserved by the review being
+   a FRESH Opus session with no shared context, not by a different engine.
 2. Write the raw task to a file (`<task-file>`, out-of-repo). Choose an
    `<out-path>` for the design doc OUTSIDE any repo (task artifact dir or tmp).
 3. `claude_orchestrate start` in the scratch dir (per Inputs; no `worktree`),
@@ -238,10 +239,9 @@ target repo to ground the design; it does not write to it.
    routinely exceeds the TTL) — with `kanban_task_id` passed at `start`, the
    plugin auto-heartbeats the claim from inside `wait` (principle #2).
 
-**1b.2 Design review** (GLM-5.3 via Fireworks, cross-group):
+**1b.2 Design review** (Opus 5.5 via seatbelt, fresh session):
 1. `claude_orchestrate start` in the scratch dir (per Inputs), `executor=claude`,
-   `model_provider=fireworks` (GLM-5.3 — the design reviewer; do NOT pass
-   `model`, the route pins GLM-5.3 via env),
+   `model_provider=seatbelt`, `model=opus` (the design reviewer),
    `kanban_task_id=<kanban task>` (+ `kanban_board=<slug>` when set — principle
    #2 auto-heartbeat). `task_id` e.g.
    `t2-<TASK_ID>-dreview`. Choose a `<verdict-path>` OUTSIDE any repo. Prompt
@@ -267,7 +267,7 @@ target repo to ground the design; it does not write to it.
      1b.1) with: "Read the design doc at `<doc-path>` and the blocking issues at
      `<issues-file>`. Revise the doc in place to address every blocking issue.
      Then set status complete + write DONE to your outcome file." Then run a
-     FRESH GLM review (1b.2 again, new review session — the reviewer is always
+     FRESH Opus review (1b.2 again, new review session — the reviewer is always
      fresh; only the author is retained). If the author session died since
      1b.1, start a new author with the same route + prompt it with the current
      doc and issues. **HARD LIMIT: at most 3
@@ -349,11 +349,11 @@ one died or hit a hard context wall.
      release/re-claim for it.
    - **Model route is prescribed, not chosen.** Launch exactly the route this
      step documents (here: seatbelt/Sonnet 5.5; other steps prescribe their
-     own — seatbelt/Opus design author, Fireworks/GLM reviews). Never
+     own — seatbelt/Opus design, seatbelt/Sonnet implementation+review). Never
      spontaneously pick a different model
      or silently switch model groups/billing routes — the same rule
      covers sessions you launch manually via tmux. There is no pre-approved
-     cross-group substitution: if the prescribed route is unavailable, STOP
+     substitution: if the prescribed route is unavailable, STOP
      and get explicit human approval before rerouting.
    - **Graphify seed (only when the main repo has a `.graphify/` graph):** the
      worktree starts with NO graph (it's not committed, so `git worktree add`
@@ -412,7 +412,7 @@ one died or hit a hard context wall.
      completed child hold a supervisor hostage in a wait call.
    - **Failed/crashed/stalled run**: retry the SAME unit ONCE on the same
      prescribed route. Still failing → STOP for explicit approval before
-     switching engines (cross-group — principle #7); the claim stays held
+     switching engines (principle #7); the claim stays held
      regardless.
 5. Track an iteration counter in the ledger; exceed a sane max (e.g. 10) → ESCALATE.
 6. After each unit completes: update the ledger file and `hermes kanban attach
@@ -514,10 +514,8 @@ session** (not the implementer session):
    branch, not the trunk. Reviewing beyond the delta duplicates earlier rounds
    and scales cost with stack size instead of change size.
 1. `claude_orchestrate start` a Claude Code session (`executor=claude`,
-   `model_provider=fireworks` — the independent code review runs on GLM-5.3 via
-   the Fireworks Anthropic-compatible endpoint, a distinct group from the
-   seatbelt/Sonnet implementer; do NOT pass `model`, the route pins GLM-5.3 via
-   env; pass
+   `model_provider=seatbelt`, `model=sonnet` — the independent code review runs
+   on a FRESH Sonnet session, distinct from the implementer session; pass
    `kanban_task_id`/`kanban_board` as everywhere else, principle #2) in the
    task's worktree (`workdir=<rundir>`). Prompt it to run the pr-review-toolkit
    the review over this unit's changes and write a structured verdict to a
@@ -532,10 +530,10 @@ session** (not the implementer session):
    section is canonical). Set status complete + write DONE to
    your outcome file." Launch with `effort=medium` (high effort is the main claude
    hang trigger; a structured-verdict review doesn't need it).
-   **Fireworks auth is explicit and fails closed:** the plugin refuses to launch
+   **(legacy route, unused since the all-seatbelt routing) Fireworks auth fails closed:** the plugin refuses to launch
    this route without `FIREWORKS_API_KEY` in the environment. If `start` returns
    that error, the step FAILS CLOSED — stop and escalate. Do NOT substitute
-   another model group (principle #7 — no cross-group fallback).
+   another model group (principle #7 — no silent engine fallback).
 2. `wait` for the session; read the verdict file. (Distinct review session from
    the implementer — per the `pr-review-toolkit` Pitfalls entry, never reuse the
    implementer to review its own work.)
@@ -686,7 +684,7 @@ minimal rework directly (read_file/patch) against the rejection's own spec.
    `pr-description-style`) to describe the NEW minimal mechanism. Never leave an
    over-built PR's original description in place after a rework — it no longer
    matches the diff and misleads the human reviewer.
-4. **Run one fresh independent code-review round** (GLM-5.3 via Fireworks, `claude_orchestrate`)
+4. **Run one fresh independent code-review round** (Sonnet via seatbelt, `claude_orchestrate`)
    against the reworked diff (`origin/<base>...HEAD`) before treating it as ready.
    A smaller diff is not itself proof of correctness — get an actual approved
    verdict on the NEW diff, same as any other Phase 3.3 review.
@@ -877,7 +875,7 @@ head are lost when the session ends.
   first-run \"Is this a project you trust?\" TUI menu and exits with
   `outcome=null`, which looks identical to a silent crash.** Text `steer` cannot
   navigate that menu (it needs arrow-key + Enter, not typed text), so the session
-  dies. The plugin (`~/.hermes/plugins/claude-orchestrate/__init__.py`, fireworks
+  dies. The plugin (`~/.hermes/plugins/claude-orchestrate/__init__.py`, legacy-fireworks
   branch) sets `hasCompletedOnboarding` and approves the API key in
   `~/.hermes/claude-k3-config/.claude.json`, but trust is stored per-directory as
   `projects[<abs-path>].hasTrustDialogAccepted = true` in that same file — it is
@@ -900,8 +898,8 @@ head are lost when the session ends.
   connected); probe auth by checking whether the menu appeared, not by assuming
   the null outcome means auth is down.
 
-<!-- LESSON: Fireworks/K3 "reads outside working directories" permission prompt
-stalls sessions. A claude_orchestrate session (model_provider=fireworks) whose
+<!-- LESSON (legacy Fireworks route): "reads outside working directories" permission prompt
+stalls sessions. A claude_orchestrate session (legacy model_provider=fireworks) whose
 workdir is a scratch dir or worktree, reading a repo OUTSIDE that workdir, hits
 an interactive TUI menu "Allow reads outside the working directories? 1.Yes
 2.No 3.Ask again". Text `steer` cannot navigate arrow-key menus; the session
