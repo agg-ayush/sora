@@ -18,6 +18,7 @@ Verifies:
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -165,6 +166,8 @@ class KanbanAutoHeartbeatTest(unittest.TestCase):
             return _completed(0)
         with patch.object(claude_orchestrate, "_tasks_root", return_value=self.tasks_root), \
              patch.object(claude_orchestrate, "_run", side_effect=fake_run), \
+             patch.object(claude_orchestrate, "_seatbelt_headers", return_value="x-tfy-api-key: DUMMY\nx-maat-token: DUMMY"), \
+             patch.dict(os.environ, {"TFY_API_KEY": "DUMMY_TFY"}, clear=False), \
              patch.object(claude_orchestrate, "_session_exists", return_value=False):
             out = claude_orchestrate._start({
                 "task_id": "t-start-link", "prompt": "x", "workdir": "/tmp",
