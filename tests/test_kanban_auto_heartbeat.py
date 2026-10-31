@@ -168,6 +168,7 @@ class KanbanAutoHeartbeatTest(unittest.TestCase):
              patch.object(claude_orchestrate, "_session_exists", return_value=False):
             out = claude_orchestrate._start({
                 "task_id": "t-start-link", "prompt": "x", "workdir": "/tmp",
+                "model_provider": "seatbelt", "model": "opus",
                 "kanban_task_id": "KB-55", "kanban_board": "boardz",
             })
             self.assertTrue(out["ok"], out)
@@ -177,6 +178,7 @@ class KanbanAutoHeartbeatTest(unittest.TestCase):
 
             out2 = claude_orchestrate._start({
                 "task_id": "t-start-nolink", "prompt": "x", "workdir": "/tmp",
+                "model_provider": "seatbelt", "model": "opus",
             })
             self.assertTrue(out2["ok"], out2)
             meta2 = json.loads((self.tasks_root / "t-start-nolink" / "meta.json").read_text())

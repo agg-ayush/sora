@@ -245,7 +245,7 @@ def _start(args: dict) -> dict:
     executor = str(args.get("executor") or "claude").strip().lower()
     model = str(args.get("model") or "").strip() or None
     effort = str(args.get("effort") or "").strip().lower() or None
-    model_provider = str(args.get("model_provider") or "truefoundry").strip().lower()
+    model_provider = str(args.get("model_provider") or "seatbelt").strip().lower()
 
     if not task_id or not prompt or not workdir:
         return {"ok": False, "error": "task_id, prompt, and workdir are required"}
@@ -253,11 +253,13 @@ def _start(args: dict) -> dict:
         return {"ok": False, "error": f"invalid executor: {executor!r} (must be 'claude' or 'codex')"}
     if model_provider not in {"truefoundry", "fireworks", "seatbelt"}:
         return {"ok": False, "error": f"invalid model_provider: {model_provider!r} (must be 'truefoundry', 'fireworks' or 'seatbelt')"}
-    if model_provider == "truefoundry" and executor == "claude" and not model:
-        # Without a pinned model the claude CLI falls back to its own default,
-        # which rides the TF anthropic endpoint as a bare id and bills as
-        # anthropic-primary. Every TF claude session must pin explicitly.
-        return {"ok": False, "error": "model_provider=truefoundry with executor=claude requires an explicit model (e.g. gemini-group/gemini-4-argon); refusing to launch with the CLI's default"}
+    if model_provider == "truefoundry" and executor == "claude":
+        # Claude Code through TF speaks the anthropic protocol, where the
+        # gateway strips group prefixes and bills every Claude model as
+        # anthropic-primary at list rates. Claude work goes through seatbelt
+        # (primary) or fireworks/GLM (fallback). truefoundry remains valid
+        # only for the codex executor (codex_responses transport).
+        return {"ok": False, "error": "executor=claude does not support model_provider=truefoundry (anthropic-primary billing); use model_provider=seatbelt (primary) or fireworks (fallback)"}
     if effort and effort not in {"low", "medium", "high", "xhigh", "max"}:
         return {"ok": False, "error": f"invalid effort: {effort!r}"}
     seatbelt_model = None
@@ -302,10 +304,10 @@ def _start(args: dict) -> dict:
                 }
         rundir = str(worktree_path)
 
-    opus_tf_route = (
-        executor == "claude" and model_provider == "truefoundry"
-        and model in {"claude-group/claude-opus-5-5", "gemini-group/gemini-4-argon"}
-    )
+    # Retired: Claude-via-TF (anthropic-primary billing) is rejected above,
+    # so this route can never activate. Kept as False instead of deleting the
+    # downstream branches — they are unreachable and inert.
+    opus_tf_route = False
     status_instruction = (
         f"\n\nAt each phase boundary, write a single word to {shlex.quote(status_path.as_posix())}: "
         "investigating, implementing, testing, blocked, or complete. "
