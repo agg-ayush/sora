@@ -100,7 +100,12 @@ def _tasks_root() -> Path:
 
 def _run(cmd: list[str], timeout: int = SUBPROCESS_TIMEOUT) -> subprocess.CompletedProcess:
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        env = os.environ.copy()
+        local_bin = str(Path.home() / ".local" / "bin")
+        path = env.get("PATH", "")
+        if local_bin not in path.split(os.pathsep):
+            env["PATH"] = f"{local_bin}{os.pathsep}{path}" if path else local_bin
+        return subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=timeout)
     except (OSError, subprocess.SubprocessError) as exc:
         return subprocess.CompletedProcess(cmd, 1, "", f"{type(exc).__name__}: {exc}")
 
@@ -378,8 +383,12 @@ def _start(args: dict) -> dict:
         # is the broker — the agent edits+commits, never pushes/merges. Write a
         # per-session settings.json with the hook and pass it via --settings.
         deny_settings = artifact_dir / "deny-settings.json"
+        stop_gate_cmd = f"python3 {shlex.quote(str(_stop_gate_path()))} {shlex.quote(str(artifact_dir.resolve()))}"
         session_settings: dict = {
-            "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": str(_deny_guard_path())}]}]}
+            "hooks": {
+                "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": str(_deny_guard_path())}]}],
+                "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": stop_gate_cmd, "timeout": 15}]}],
+            }
         }
         if opus_tf_route:
             # A safety-flagged request stops instead of silently switching models.
@@ -676,6 +685,10 @@ def _start(args: dict) -> dict:
     # reclaim. tmux-spawned sessions never get a worker_pid from the dispatcher,
     # so the reclaimer's pid-alive extension doesn't protect them.
     kanban_task = str(args.get("kanban_task_id") or "").strip()
+    if not kanban_task:
+        m_kb = re.match(r"^(?:t2-)?(t_[0-9a-f]{8})\b", task_id)
+        if m_kb:
+            kanban_task = m_kb.group(1)
     kanban_board = str(args.get("kanban_board") or "").strip()
     if kanban_task:
         meta["kanban_task_id"] = kanban_task
@@ -807,6 +820,31 @@ def _deny_guard_path() -> Path:
     return get_hermes_home() / "scripts" / "deny-guard.sh"
 
 
+def _stop_gate_path() -> Path:
+    """Path to the Stop hook script (records stop receipt, runs Rust syntax lint, blocks uncommitted complete)."""
+    return get_hermes_home() / "scripts" / "t3-stop-gate.py"
+
+
+def _native_claude_status(task_id: str) -> str | None:
+    """Read Claude Code 2.1+'s native session JSON (`status`: 'idle' | 'working') if matched by tmux session name."""
+    for base in (get_hermes_home() / "claude-seatbelt-config" / "sessions",
+                 get_hermes_home() / "claude-k3-config" / "sessions",
+                 Path.home() / ".claude" / "sessions"):
+        if not base.is_dir():
+            continue
+        try:
+            for entry in base.glob("*.json"):
+                data = json.loads(entry.read_text("utf-8"))
+                tmux_ref = str(data.get("tmux") or "")
+                if tmux_ref.startswith(f"{task_id}:"):
+                    st = str(data.get("status") or "").strip().lower()
+                    if st in {"idle", "working"}:
+                        return st
+        except Exception:
+            continue
+    return None
+
+
 _KANBAN_HB_MIN_INTERVAL = 60  # seconds between auto-heartbeats per session
 _kanban_hb_last: dict[str, float] = {}  # task_id -> last heartbeat (monotonic)
 
@@ -825,11 +863,15 @@ def _maybe_kanban_heartbeat(task_id: str, *, force: bool = False) -> None:
     the dispatcher, so the reclaimer's pid-alive extension doesn't protect them.
     """
     try:
-        meta_raw = _read_text(_artifact_dir(task_id) / "meta.json")
-        if not meta_raw:
+        if not task_id:
             return
-        meta = json.loads(meta_raw)
+        meta_raw = _read_text(_artifact_dir(task_id) / "meta.json")
+        meta = json.loads(meta_raw) if meta_raw else {}
         ktask = meta.get("kanban_task_id")
+        if not ktask:
+            m_kb = re.match(r"^(?:t2-)?(t_[0-9a-f]{8})\b", task_id)
+            if m_kb:
+                ktask = m_kb.group(1)
         if not ktask:
             return
         now = time.monotonic()
@@ -869,7 +911,8 @@ def _session_state(task_id: str, tail: int = 60, stall_seconds: int = STALL_SECO
     capture = _run(["tmux", "capture-pane", "-t", task_id, "-p", "-S", f"-{tail}"])
     pane = capture.stdout if capture.returncode == 0 else ""
     lines = [line for line in pane.splitlines() if line.strip()]
-    waiting_for_input = bool(lines) and "❯" in lines[-1]
+    native_status = _native_claude_status(task_id)
+    waiting_for_input = (bool(lines) and "❯" in lines[-1]) or (native_status == "idle")
     done = (status_file or "").strip().lower() == "complete"
 
     # Claude Code / Codex show a live activity indicator in the pane while a turn
@@ -878,9 +921,11 @@ def _session_state(task_id: str, tail: int = 60, stall_seconds: int = STALL_SECO
     # legitimately think for minutes without writing status.md, so file-change
     # staleness alone must NOT flag it stalled (that would Esc a thinking session).
     tail_text = "\n".join(lines[-6:]) if lines else ""
-    actively_working = bool(
+    actively_working = (native_status == "working") or bool(
         re.search(r"esc to interrupt|Thinking…|Working…|↑ \d|tokens|\(\d+m?s? ", tail_text)
     )
+    if native_status == "working":
+        waiting_for_input = False
 
     now = time.time()
     last_change_ts = _record_activity(task_id, status_file, now)
@@ -941,9 +986,9 @@ def _wait(args: dict) -> dict:
     if not task_id:
         return {"ok": False, "error": "task_id is required"}
     try:
-        timeout = int(args.get("timeout") or 600)
+        timeout = int(args.get("timeout") or 900)
     except (TypeError, ValueError):
-        timeout = 600
+        timeout = 900
     try:
         interval = max(3, int(args.get("interval") or 15))
     except (TypeError, ValueError):
@@ -1421,6 +1466,9 @@ _ACTIONS = {
 def _handle(args: dict, **kw) -> str:
     try:
         action = str(args.get("action") or "").strip().lower()
+        task_id = str(args.get("task_id") or "").strip()
+        if task_id and action in {"start", "status", "wait", "steer", "interrupt", "diagnose", "result", "gate", "set_phase"}:
+            _maybe_kanban_heartbeat(task_id)
         fn = _ACTIONS.get(action)
         if fn is None:
             return json.dumps({"ok": False, "error": f"unknown action: {action}"})
