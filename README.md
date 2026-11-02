@@ -14,73 +14,22 @@ docs/       hermes-tiers-reference.md (canonical architecture) + audit.md
 config/     config.yaml.template, env.template, zshrc-snippet.sh (NO secrets)
 ```
 
-## Install (new machine)
+## Install / Sync (Mac or Ubuntu EC2 `sora`)
+
+Run the idempotent setup script (`devbox/setup-hermes.sh`) — it installs sidelined tools (`ruff`, `oxlint`, `smem`), wires the `claude-orchestrate` and `synapse-mem` plugins, syncs all tier skills, scripts, and agent-hooks (`subagent-ledger.py`, `aws-token-refresh.sh`, `t3-stop-gate.py`), symlinks `~/.hermes/claude-seatbelt-config` (`CLAUDE.md`, `skills/`, `plugins/`) to `~/.claude` with all plugins enabled, patches `pr-review-toolkit`, and sets global gitignore (`.serena/`, `.ui-flow/`):
 
 ```bash
 git clone git@github.com:agg-ayush/hermes-setup.git ~/hermes-setup
-
-# 1. Plugin → symlink into Hermes plugins
-ln -sf ~/hermes-setup/plugin ~/.hermes/plugins/claude-orchestrate
-
-# 1b. pr-review-toolkit patch → copy the state-transition-reviewer into the
-# Claude Code plugin cache (adds the specialist + wires it into review-pr)
-cp ~/hermes-setup/plugins/pr-review-toolkit/agents/state-transition-reviewer.md \
-   ~/.claude/plugins/cache/claude-plugins-official/pr-review-toolkit/*/agents/
-cp ~/hermes-setup/plugins/pr-review-toolkit/commands/review-pr.md \
-   ~/.claude/plugins/cache/claude-plugins-official/pr-review-toolkit/*/commands/
-
-# 2. Skills → symlink into Hermes skills
-mkdir -p ~/.hermes/skills/autonomous-ai-agents
-ln -sf ~/hermes-setup/skills/tier1-suborchestration ~/.hermes/skills/autonomous-ai-agents/
-ln -sf ~/hermes-setup/skills/tier2-orchestration ~/.hermes/skills/autonomous-ai-agents/
-
-# 3. Scripts → symlink into Hermes scripts
-mkdir -p ~/.hermes/scripts
-ln -sf ~/hermes-setup/scripts/orphan-reaper.py ~/.hermes/scripts/
-
-# 3b. Hooks → symlink into ~/.hermes/agent-hooks/ (Hermes hook scripts live
-# there, NOT in ~/.hermes/scripts/). The config template's hooks section
-# points at these paths.
-mkdir -p ~/.hermes/agent-hooks
-ln -sf ~/hermes-setup/scripts/subagent-ledger-hook.py ~/.hermes/agent-hooks/subagent-ledger.py
-ln -sf ~/hermes-setup/scripts/aws-token-refresh-hook.sh ~/.hermes/agent-hooks/aws-token-refresh.sh
-
-# 4. Config — copy templates and fill in
-cp ~/hermes-setup/config/config.yaml.template ~/.hermes/config.yaml
-cp ~/hermes-setup/config/env.template ~/.hermes/.env
-# edit ~/.hermes/.env with real API keys
-
-# 4b. kimi-k3 isolated config — the plugin's fireworks path uses
-# CLAUDE_CONFIG_DIR=~/.hermes/claude-k3-config/ to isolate the kimi-k3 session
-# from the TF-gateway settings.json (which would otherwise override the env-var
-# routing). The isolated config should have the user's real Claude Code settings
-# + skills + plugins, with the TF-gateway env vars removed. Set it up once:
-#   cp -R ~/.claude/skills ~/.claude/plugins ~/.hermes/claude-k3-config/
-#   cp ~/.claude/CLAUDE.md ~/.hermes/claude-k3-config/CLAUDE.md
-#   python3 -c "merge ~/.claude/settings.json minus TF env vars into
-#     ~/.hermes/claude-k3-config/settings.json (keep skipDangerousModePermissionPrompt)"
-# The plugin pre-seeds the isolated .claude.json (onboarding + API-key approval)
-# on first run — no manual step needed.
-
-# 5. Shell aliases — add holo function to ~/.zshrc
-cat ~/hermes-setup/config/zshrc-snippet.sh >> ~/.zshrc
-source ~/.zshrc
-
-# 6. Kanban boards — bind each repo to its board (adjust paths for your machine)
-hermes kanban boards create alpha-learn-content-gen
-hermes kanban boards set-default-workdir alpha-learn-content-gen /path/to/your/content-repo
-hermes kanban boards create learning-app
-hermes kanban boards set-default-workdir learning-app /path/to/your/app-repo
-
-# 7. Gateway service
-hermes gateway setup   # configure Telegram etc.
-hermes gateway install
-hermes gateway start
-
-# 8. Cron — orphan reaper (every 30 min)
-# Create via the cronjob tool or:
-hermes cron add "30m" --script ~/.hermes/scripts/orphan-reaper.py --no-agent
+bash ~/hermes-setup/devbox/setup-hermes.sh
 ```
+
+What `devbox/setup-hermes.sh` sets up:
+1. **Sidelined CLI binaries:** `ruff` (`uv tool install ruff`), `oxlint` (`npm install -g oxlint`), and `smem` (`~/repos/synapse-mem/integrations/install/install-smem.sh` if cloned).
+2. **Hermes plugins & memory:** Symlinks `~/hermes-setup/plugin` → `~/.hermes/plugins/claude-orchestrate` and activates `synapse-mem` (`memory.provider: synapse-mem`).
+3. **Hermes skills:** Symlinks `tier1-suborchestration`, `tier2-orchestration`, and copies `skills/devops/aws-devfactory-operations`.
+4. **Scripts & hooks:** Copies repo scripts into `~/.hermes/scripts/` (matching host variant `aws-creds-refresh.sh` on Mac vs `aws-creds-refresh-linux.sh` on Linux so `watchdog.py` sees zero script drift) and hooks into `~/.hermes/agent-hooks/`.
+5. **Claude Code seatbelt sync:** Symlinks `~/.hermes/claude-seatbelt-config/{CLAUDE.md,skills,plugins}` → `~/.claude/`, copies the `state-transition-reviewer` specialist into `pr-review-toolkit`, and enables all installed plugins in seatbelt's `settings.json`.
+6. **Global gitignore:** Adds `.serena/`, `.ui-flow/`, and `**/.claude/settings.local.json`.
 
 ## Usage
 
