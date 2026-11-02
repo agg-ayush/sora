@@ -607,9 +607,20 @@ watch a local worktree.
    changes behavior, edit the body (`gh pr edit --body-file -`, per
    `pr-description-style`) so it always reflects the final state. The PR body is the
    review surface; keep it accurate.
-4. Link the PR back to the kanban task: `hermes kanban comment <task_id> "PR: <url>"`
+4. **Wait for CI and review bots on the exact PR head via `pr-wait.py`** (do NOT write
+   ad-hoc `sleep`/`gh pr checks` loops):
+   ```bash
+   python3 ~/.hermes/scripts/pr-wait.py <pr_number_or_url> --until green
+   ```
+   `pr-wait.py` holds a per-PR lock (`~/.local/state/pr-wait/`), retries transient
+   GitHub 5xx/429s with backoff, and exits `0` when all required checks pass on the
+   current head (or `1` immediately if a required check fails, the branch goes `DIRTY`,
+   or unresolved review threads appear, printing the exact failing check/thread URL).
+   If `pr-wait.py` exits `1`, fix the CI failure or review comment in the worktree,
+   commit, push, and re-run `pr-wait.py <PR> --until green` before requesting human review.
+5. Link the PR back to the kanban task: `hermes kanban comment <task_id> "PR: <url>"`
    for the audit trail. Then **move the task to the `review` status** (PR is up,
-   awaiting the human's code review):
+   green, awaiting the human's code review):
    `hermes kanban request-review <task_id> [--board <repo>] --summary
    "PR #N up for review" --force`. **STOP.** Autonomy ends here — a human decision is
    required for EVERY merge (hard rule).

@@ -71,6 +71,7 @@ COMMON_SCRIPTS=(
   error-journal.py
   hermes-hygiene.py
   orphan-reaper.py
+  pr-wait.py
   t3-stop-gate.py
   test-error-journal.py
   trilogy-aws-key.py
