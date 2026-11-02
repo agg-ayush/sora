@@ -71,8 +71,8 @@ fi
 
 # curl/wget to non-allowlisted hosts (exfil surface) — allow the common ones
 if echo "$NORM" | grep -qE '(^|\s|&&|\|\|)(curl|wget)\s'; then
-  # allow api.github.com, github.com, the TF gateway, fireworks, the local hosts
-  if ! echo "$NORM" | grep -qE '(api\.github\.com|github\.com|raw\.githubusercontent\.com|<llm-gateway>|api\.fireworks\.ai|api\.anthropic\.com|localhost|127\.0\.0\.1)'; then
+  # allow api.github.com, github.com, seatbelt, TF gateway, fireworks, the local hosts
+  if ! echo "$NORM" | grep -qE '(api\.github\.com|github\.com|raw\.githubusercontent\.com|<model-gateway>|<model-gateway>|<llm-gateway>.truefoundry.cloud|api\.fireworks\.ai|api\.anthropic\.com|localhost|127\.0\.0\.1)'; then
     block "curl/wget to a non-allowlisted host — potential exfil"
   fi
 fi
