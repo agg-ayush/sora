@@ -344,7 +344,11 @@ def _start(args: dict) -> dict:
             "absolute paths — no shell variables, command substitutions, or the built-in Write tool "
             "for task files."
         )
-    full_prompt = f"{prompt}{status_instruction}"
+    learned_rules = _error_journal_inject(executor)
+    if learned_rules and "## Learned Rules" not in str(prompt):
+        full_prompt = f"{learned_rules}\n\n{prompt}{status_instruction}"
+    else:
+        full_prompt = f"{prompt}{status_instruction}"
     if opus_tf_route:
         # Opus launches idle (no positional prompt); the brief is handed over
         # from disk, so prompt.md must carry the full instructions.
@@ -833,6 +837,30 @@ def _deny_guard_path() -> Path:
 def _stop_gate_path() -> Path:
     """Path to the Stop hook script (records stop receipt, runs Rust syntax lint, blocks uncommitted complete)."""
     return get_hermes_home() / "scripts" / "t3-stop-gate.py"
+
+
+def _error_journal_path() -> Path:
+    return get_hermes_home() / "scripts" / "error-journal.py"
+
+
+def _error_journal_inject(executor: str) -> str:
+    """Return auto-promoted learned rules for *executor* from error-journal.py, or empty string."""
+    ej = _error_journal_path()
+    if not ej.is_file():
+        return ""
+    res = _run(["python3", str(ej), "inject", executor])
+    return res.stdout.strip() if res.returncode == 0 and res.stdout else ""
+
+
+def _error_journal_record(task_id: str, executor: str, error_type: str, trace: str, fix: str) -> None:
+    """Best-effort record + auto-promote into error-journal.py when a gate check fails."""
+    ej = _error_journal_path()
+    if not ej.is_file() or not trace:
+        return
+    try:
+        _run(["python3", str(ej), "record", task_id, executor, error_type, trace[:500], fix[:300]])
+    except Exception:
+        pass
 
 
 def _native_claude_status(task_id: str) -> str | None:
@@ -1434,6 +1462,14 @@ def _gate(args: dict) -> dict:
             pass  # attachment check is best-effort; don't block on a CLI failure
 
     passed = all(c["result"] == "pass" for c in (impl, review, tests) if c["result"] != "skipped") and design_doc_ok
+
+    executor = str(meta.get("executor") or "claude")
+    if impl["result"] == "fail":
+        _error_journal_record(task_id, executor, "impl_incomplete", impl.get("evidence", ""), "Ensure status.md is 'complete' and all changes are committed in the worktree before finishing.")
+    if review["result"] == "fail":
+        _error_journal_record(task_id, executor, "review_needs_fixes", review.get("evidence", ""), "Address all P0/P1 code review findings before advancing.")
+    if tests["result"] == "fail":
+        _error_journal_record(task_id, executor, "test_failure", tests.get("evidence", ""), "Run and pass the test suite on the branch before marking complete.")
 
     return {
         "ok": True,
