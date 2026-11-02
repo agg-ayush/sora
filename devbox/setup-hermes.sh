@@ -50,8 +50,10 @@ fi
 
 # 3. Hermes plugin + skills
 log "wiring claude-orchestrate plugin and tier skills"
+rm -rf "$HERMES_HOME/plugins/claude-orchestrate"
 ln -sfn "$REPO_DIR/plugin" "$HERMES_HOME/plugins/claude-orchestrate"
 for s in tier1-suborchestration tier2-orchestration; do
+  rm -rf "$HERMES_HOME/skills/autonomous-ai-agents/$s" "$HERMES_HOME/skills/$s"
   ln -sfn "$REPO_DIR/skills/$s" "$HERMES_HOME/skills/autonomous-ai-agents/$s"
   ln -sfn "$REPO_DIR/skills/$s" "$HERMES_HOME/skills/$s"
 done
