@@ -132,8 +132,8 @@ def main() -> int:
             uncommitted_code = []
             for line in porcelain_lines:
                 rel = line[3:].strip().split(" -> ")[-1].strip('"')
-                # Ignore internal scratch/plan/serena/ui-flow artifacts
-                if any(rel.startswith(p) for p in (".serena", ".ui-flow", ".claude", "docs/superpowers")):
+                # Ignore internal scratch/plan/serena/ui-flow/graphify artifacts
+                if any(rel.startswith(p) for p in (".serena", ".ui-flow", ".graphify", "graphify-out", ".claude", "docs/superpowers")):
                     continue
                 if not line.startswith("??") or Path(rel).suffix in CODE_EXTS:
                     uncommitted_code.append(line)

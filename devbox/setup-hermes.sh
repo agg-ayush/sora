@@ -132,7 +132,7 @@ json.dump(settings, open(sb_settings_path, "w"), indent=2)
 PY
 fi
 
-# 7. Global gitignore (.serena/, .ui-flow/, .claude/settings.local.json)
+# 7. Global gitignore (.serena/, .ui-flow/, .graphify/, graphify-out/, .claude/settings.local.json)
 GIT_IGNORE="$(git config --global core.excludesfile || true)"
 if [ -z "$GIT_IGNORE" ]; then
   GIT_IGNORE="$HOME/.config/git/ignore"
@@ -142,7 +142,7 @@ fi
 GIT_IGNORE="${GIT_IGNORE/#\~/$HOME}"
 mkdir -p "$(dirname "$GIT_IGNORE")"
 touch "$GIT_IGNORE"
-for pat in "**/.claude/settings.local.json" ".serena/" ".ui-flow/"; do
+for pat in "**/.claude/settings.local.json" ".serena/" ".ui-flow/" ".graphify/" "graphify-out/"; do
   grep -qxF "$pat" "$GIT_IGNORE" 2>/dev/null || echo "$pat" >> "$GIT_IGNORE"
 done
 

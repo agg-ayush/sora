@@ -307,6 +307,16 @@ def _start(args: dict) -> dict:
                     "ok": False,
                     "error": (fallback.stderr or fallback.stdout or "git worktree add failed").strip(),
                 }
+        # Share the main repo's .graphify directory across worktrees so T3 sessions
+        # reuse the persistent graph (--update) instead of rebuilding from scratch.
+        try:
+            main_graphify = Path(workdir).resolve() / ".graphify"
+            main_graphify.mkdir(exist_ok=True)
+            wt_graphify = worktree_path / ".graphify"
+            if not wt_graphify.exists() and not wt_graphify.is_symlink():
+                wt_graphify.symlink_to(main_graphify)
+        except OSError:
+            pass
         rundir = str(worktree_path)
 
     # Retired: Claude-via-TF (anthropic-primary billing) is rejected above,
