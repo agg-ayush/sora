@@ -67,3 +67,16 @@ tests/tools/test_delegate_kanban_isolation.py`. Delegated `kanban list`,
 `show`, `stats`, `runs`, `boards list`, and `watch` all work; delegated
 `complete` is still blocked with exit 1. Cold DB + delegated fails cleanly;
 cold DB + non-delegated auto-inits.
+
+## 2. Exclude `local_automation_v1` from `pending_rows` viewer receipts
+
+**Status:** applied + verified 2026-11-03.
+
+**Why.** On the canonical gateway (`gateway/session_queued_controls.py`), `pending_rows()` included `local_automation_v1` rows (background process completions, subagent completions, heartbeats) in `session.info.pending`. When those rows transitioned `queued → started`, `ui-tui/src/app/createGatewayEventHandler.ts` (`newlyStartedRows`) painted `started.user` (the full `[IMPORTANT: Background process ...]` or `[ASYNC DELEGATION BATCH COMPLETE ...]` model text) as a live `❯` user chat bubble on screen.
+
+**Files + functions changed:**
+
+- `gateway/session_queued_controls.py` (`sora`)
+  - `pending_rows(authority, ref)` — filters out `'local_automation_v1' in (row.get('payload') or {})` so internal automation turns are not broadcast as user-queued prompt bubbles.
+- `tui_gateway/session_notifications.py` (`Mac` pre-canonical sidecar)
+  - `_notif_poll_kanban` — stamps `display_kind="process_complete"` on kanban wake submissions so they render as 1-line event notices instead of user bubbles.
