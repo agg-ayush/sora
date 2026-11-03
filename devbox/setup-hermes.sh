@@ -40,12 +40,17 @@ if ! command -v oxlint >/dev/null 2>&1; then
 fi
 
 if ! command -v smem >/dev/null 2>&1; then
-  if [ -x "$HOME/repos/synapse-mem/integrations/install/install-smem.sh" ]; then
-    log "installing smem binary from ~/repos/synapse-mem"
+  if [ -f "$HOME/repos/synapse-mem/integrations/install/install-smem.sh" ]; then
+    log "installing smem from ~/repos/synapse-mem"
     "$HOME/repos/synapse-mem/integrations/install/install-smem.sh"
   else
     log "note: smem not on PATH (clone agg-ayush/synapse-mem to ~/repos/synapse-mem to install)"
   fi
+fi
+
+if command -v hermes >/dev/null 2>&1 && ! ls "$HERMES_HOME"/tools/agent-browser-* >/dev/null 2>&1; then
+  log "installing agent-browser via hermes pm"
+  hermes pm install agent-browser
 fi
 
 # 3. Hermes plugin + skills
