@@ -101,6 +101,30 @@ def prune_checkpoints() -> str | None:
     return f"checkpoints: reclaimed {amount:.1f} {unit}"
 
 
+def prune_archived_messages(keep_per_session: int = 400) -> str | None:
+    """Delete old compaction-archived (active = 0) rows beyond the newest *keep_per_session*
+    per session, never touching active = 1 or _compressed_summary = 1 rows (zero model impact)."""
+    if not STATE_DB.is_file():
+        return None
+    sql = f"""
+    PRAGMA busy_timeout = 10000;
+    DELETE FROM messages WHERE id IN (
+      SELECT id FROM (
+        SELECT id, _compressed_summary,
+               ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY id DESC) AS rn
+        FROM messages WHERE active = 0
+      ) WHERE rn > {int(keep_per_session)} AND _compressed_summary = 0
+    );
+    SELECT changes();
+    """
+    r = subprocess.run(["sqlite3", str(STATE_DB), sql], capture_output=True, text=True, timeout=180)
+    if r.returncode != 0:
+        return f"archived-message prune failed: {(r.stderr or r.stdout).strip()[:120]}"
+    lines = [ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip().isdigit()]
+    deleted = int(lines[-1]) if lines else 0
+    return f"messages: pruned {deleted} old compacted rows (> {keep_per_session}/session)" if deleted > 0 else None
+
+
 def optimize_sessions() -> str | None:
     """VACUUM + FTS rebuild, but only once the DB is actually large."""
     before = db_size_mb()
@@ -159,6 +183,7 @@ def main() -> int:
     lines = [
         ln for ln in (
             prune_checkpoints(),
+            prune_archived_messages(),
             optimize_sessions(),
             checkpoint_wal(),
             doctor_issues(),
