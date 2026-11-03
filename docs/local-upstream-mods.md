@@ -78,5 +78,5 @@ cold DB + non-delegated auto-inits.
 
 - `gateway/session_queued_controls.py` (`sora`)
   - `pending_rows(authority, ref)` — filters out `'local_automation_v1' in (row.get('payload') or {})` so internal automation turns are not broadcast as user-queued prompt bubbles.
-- `tui_gateway/session_notifications.py` (`Mac` pre-canonical sidecar)
-  - `_notif_poll_kanban` — stamps `display_kind="process_complete"` on kanban wake submissions so they render as 1-line event notices instead of user bubbles.
+- `tui_gateway/session_history.py` (`Mac` + `sora`)
+  - `_legacy_display_kind(role, text)` — recognizes `[IMPORTANT: Background process ` (`process_complete`) and `[ASYNC DELEGATION BATCH COMPLETE` (`async_delegation_complete`) when projecting any untyped row (e.g. a turn interrupted before post-turn stamping).
