@@ -65,7 +65,7 @@ you don't. If you catch yourself about to touch source or implementation, STOP
 A Tier-1 session is **launched with this skill preloaded**, never expected to
 self-select it mid-chat (Hermes skills are advisory — a generic session will not
 reliably adopt a tier role on its own). Launch one of:
-- `hermes -s tier1-suborchestration -m argon -p <repo-profile>` (a per-repo profile; argon via TF — same driver as T2), or
+- `hermes -s tier1-suborchestration -m argon -p <repo-profile>` (a per-repo profile; argon via TF for T1, while T2 runs on `k3p1` via Fireworks), or
 - from a repo dir whose `.hermes.md` says "You are Tier-1 for this repo; load and
   follow tier1-suborchestration."
 **Lifecycle: ONE long-lived T1 per task-set/component.** It

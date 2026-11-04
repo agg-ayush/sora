@@ -27,7 +27,7 @@ issue — normally spawned by a Tier-1 session (per repo) at handoff into a
 form from the `hermes-session-cli-launch` reference (under the
 `hermes-administration` skill) —
 `tmux new-session -d -s t2-<task_id> -x 200 -y 50 'hermes chat -s
-tier2-orchestration -m argon --tui'` then send the brief (do NOT use the stale bare
+tier2-orchestration -m k3p1 --tui'` then send the brief (do NOT use the stale bare
 `hermes -s <skill> --cli` form; see that reference for the failure modes and any
 flag drift). It MUST NOT be launched as `hermes … -q`: a single-query process
 exits when
