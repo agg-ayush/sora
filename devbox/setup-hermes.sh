@@ -104,10 +104,18 @@ cp "$REPO_DIR/scripts/subagent-ledger-hook.py" "$HERMES_HOME/agent-hooks/subagen
 cp "$REPO_DIR/scripts/aws-token-refresh-hook.sh" "$HERMES_HOME/agent-hooks/aws-token-refresh.sh"
 chmod +x "$HERMES_HOME/agent-hooks/subagent-ledger.py" "$HERMES_HOME/agent-hooks/aws-token-refresh.sh"
 
-# 5. synapse-mem Hermes provider activation (if repo checkout is present)
-if [ -x "$HOME/repos/synapse-mem/integrations/agents/hermes/activate.sh" ] && command -v smem >/dev/null 2>&1; then
-  log "activating synapse-mem Hermes memory provider"
-  SMEM_BIN="$(command -v smem)" "$HOME/repos/synapse-mem/integrations/agents/hermes/activate.sh" || true
+# 5. synapse-mem Hermes provider activation, only from an up-to-date main checkout
+SMEM_REPO="${SMEM_REPO:-$HOME/repos/synapse-mem}"
+if [ -x "$SMEM_REPO/integrations/agents/hermes/activate.sh" ] && command -v smem >/dev/null 2>&1; then
+  smem_branch="$(git -C "$SMEM_REPO" branch --show-current 2>/dev/null || true)"
+  if [ "$smem_branch" != "main" ]; then
+    log "skipping synapse-mem activation: $SMEM_REPO is on '${smem_branch:-detached}', not main"
+  elif ! git -C "$SMEM_REPO" pull -q --ff-only origin main; then
+    log "skipping synapse-mem activation: $SMEM_REPO cannot fast-forward to origin/main"
+  else
+    log "activating synapse-mem Hermes memory provider from main ($(git -C "$SMEM_REPO" rev-parse --short HEAD))"
+    SMEM_BIN="$(command -v smem)" "$SMEM_REPO/integrations/agents/hermes/activate.sh" || true
+  fi
 fi
 
 # 6. Claude Code seatbelt config sync (symlinks CLAUDE.md, skills/, plugins/ to ~/.claude)
