@@ -85,6 +85,18 @@ if [ -d "$REPO_DIR/skills/shared" ]; then
   mkdir -p "$HERMES_HOME/cache"
   while IFS= read -r skill_md; do
     src="$(dirname "$skill_md")"
+    parent="$(dirname "$src")"
+    nested=false
+    while [ "$parent" != "$REPO_DIR/skills/shared" ]; do
+      if [ -f "$parent/SKILL.md" ]; then
+        nested=true
+        break
+      fi
+      parent="$(dirname "$parent")"
+    done
+    if [ "$nested" = true ]; then
+      continue
+    fi
     rel="${src#"$REPO_DIR/skills/shared/"}"
     case "$rel" in _root/*) rel="${rel#_root/}" ;; esac
     dest="$HERMES_HOME/skills/$rel"
