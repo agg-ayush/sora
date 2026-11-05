@@ -66,6 +66,12 @@ if [ -d "$REPO_DIR/skills/devops/aws-devfactory-operations" ]; then
   rm -rf "$HERMES_HOME/skills/devops/aws-devfactory-operations"
   cp -R "$REPO_DIR/skills/devops/aws-devfactory-operations" "$HERMES_HOME/skills/devops/aws-devfactory-operations"
 fi
+mkdir -p "$HERMES_HOME/skills/software-development"
+PRT_LINK="$HERMES_HOME/skills/software-development/pr-review-toolkit"
+if [ -e "$PRT_LINK" ] && [ ! -L "$PRT_LINK" ]; then
+  mv "$PRT_LINK" "$HERMES_HOME/cache/pr-review-toolkit-$(date +%Y%m%d-%H%M%S)"
+fi
+ln -sfn "$REPO_DIR/skills/pr-review-toolkit" "$PRT_LINK"
 
 # 4. Hermes scripts + hooks (copied so watchdog check_script_drift sees exact byte parity)
 log "syncing scripts -> $HERMES_HOME/scripts/"
