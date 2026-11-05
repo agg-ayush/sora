@@ -112,6 +112,14 @@ fi
 
 # 6. Claude Code seatbelt config sync (symlinks CLAUDE.md, skills/, plugins/ to ~/.claude)
 log "syncing Claude Code seatbelt config ($SEATBELT_DIR -> $CLAUDE_HOME)"
+UI_FLOW_LINK="$CLAUDE_HOME/skills/ui-flow"
+if [ -e "$UI_FLOW_LINK" ] && [ ! -L "$UI_FLOW_LINK" ]; then
+  mkdir -p "$HERMES_HOME/cache"
+  UI_FLOW_BACKUP="$(mktemp -d "$HERMES_HOME/cache/ui-flow-$(date +%Y%m%d-%H%M%S)-XXXXXX")"
+  mv "$UI_FLOW_LINK" "$UI_FLOW_BACKUP/ui-flow"
+  log "backed up Claude Code ui-flow skill to $UI_FLOW_BACKUP/ui-flow"
+fi
+ln -sfn "$REPO_DIR/skills/claude/ui-flow" "$UI_FLOW_LINK"
 [ -f "$CLAUDE_HOME/CLAUDE.md" ] && ln -sfn "$CLAUDE_HOME/CLAUDE.md" "$SEATBELT_DIR/CLAUDE.md"
 ln -sfn "$CLAUDE_HOME/skills" "$SEATBELT_DIR/skills"
 ln -sfn "$CLAUDE_HOME/plugins" "$SEATBELT_DIR/plugins"

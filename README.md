@@ -26,7 +26,7 @@ bash ~/hermes-setup/devbox/setup-hermes.sh
 What `devbox/setup-hermes.sh` sets up:
 1. **Sidelined CLI binaries:** `ruff` (`uv tool install ruff`), `oxlint` (`npm install -g oxlint`), and `smem` (`~/repos/synapse-mem/integrations/install/install-smem.sh` if cloned).
 2. **Hermes plugins & memory:** Symlinks `~/hermes-setup/plugin` → `~/.hermes/plugins/claude-orchestrate` and activates `synapse-mem` (`memory.provider: synapse-mem`).
-3. **Hermes skills:** Symlinks `tier1-suborchestration`, `tier2-orchestration`, and copies `skills/devops/aws-devfactory-operations`.
+3. **Hermes skills:** Symlinks `tier1-suborchestration`, `tier2-orchestration`, and the Claude Code `ui-flow` skill; copies `skills/devops/aws-devfactory-operations`.
 4. **Scripts & hooks:** Copies repo scripts into `~/.hermes/scripts/` (matching host variant `aws-creds-refresh.sh` on Mac vs `aws-creds-refresh-linux.sh` on Linux so `watchdog.py` sees zero script drift) and hooks into `~/.hermes/agent-hooks/`.
 5. **Claude Code seatbelt sync:** Symlinks `~/.hermes/claude-seatbelt-config/{CLAUDE.md,skills,plugins}` → `~/.claude/`, copies the `state-transition-reviewer` specialist into `pr-review-toolkit`, and enables all installed plugins in seatbelt's `settings.json`.
 6. **Global gitignore:** Adds `.serena/`, `.ui-flow/`, and `**/.claude/settings.local.json`.
