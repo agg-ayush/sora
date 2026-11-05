@@ -107,6 +107,7 @@ COMMON_SCRIPTS=(
   test-error-journal.py
   trilogy-aws-key.py
   watch_ci_main.py
+  watch_ci_main.json
   watch_tier_events.py
   watchdog.py
 )

@@ -14,6 +14,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -777,7 +778,15 @@ def _record_activity(task_id: str, status_file: str | None, now: float) -> float
     last_change_ts = stored.get("last_change_ts")
     if not isinstance(last_change_ts, (int, float)) or stored.get("fingerprint") != fingerprint:
         last_change_ts = now
-        _write_text(activity_path, json.dumps({"fingerprint": fingerprint, "last_change_ts": last_change_ts}))
+        stored.update({"fingerprint": fingerprint, "last_change_ts": last_change_ts})
+        activity_path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temp_name = tempfile.mkstemp(prefix=f".{activity_path.name}.", suffix=".tmp", dir=activity_path.parent)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as temp_file:
+                json.dump(stored, temp_file)
+            os.replace(temp_name, activity_path)
+        finally:
+            Path(temp_name).unlink(missing_ok=True)
 
     return last_change_ts
 

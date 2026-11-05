@@ -345,6 +345,7 @@ the same workdir.
    narrating past/fixed behavior. Docstrings: only what's necessary — what it does
    + non-obvious caller contract; no design-rationale or 'why' narration the code
    already shows. Prefer no comment over a noisy one." (points at files, not pasted text).
+   - In coding-session prompts for cross-file symbol navigation (references, implementations, renames), direct the worker to use Serena MCP tools (`mcp__serena__*` via `tool_search`) and `activate_project` with the repo root first; `read_file`/ripgrep are faster for single-file reads and greps.
    **Prepend auto-promoted error rules.** Before composing the prompt, run
    `python3 ~/.hermes/scripts/error-journal.py inject claude` and prepend the
    returned markdown block to the prompt.
