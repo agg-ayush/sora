@@ -201,11 +201,11 @@ def _handoff_secret_via_fifo(fifo: Path, secret: str, timeout: float = SECRET_HA
 
 SEATBELT_BASE_URL = "https://<model-gateway>"
 SEATBELT_MODELS = {
-    "opus": "claude-teams-group/claude-opus-5-5[1m]",
-    "sonnet": "claude-teams-group/claude-sonnet-5-5[1m]",
+    "opus": "claude-teams-group/claude-opus-5-5",
+    "sonnet": "claude-teams-group/claude-sonnet-5-5",
 }
 SEATBELT_HAIKU_MODEL = "claude-teams-group/claude-haiku-4-5-20251001"
-SEATBELT_FABLE_MODEL = "claude-teams-group/claude-fable-5-1[1m]"
+SEATBELT_FABLE_MODEL = "claude-teams-group/claude-fable-5-1"
 _SEATBELT_HEADER_RE = re.compile(r"^(x-tfy-api-key|x-maat-token): (.*)$", re.MULTILINE)
 _SEATBELT_ASSIGN_RE = re.compile(r"seatbelt_headers=\$'(.*?)'", re.DOTALL)
 
