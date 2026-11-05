@@ -69,12 +69,31 @@ class WatchdogRelayTests(unittest.TestCase):
         notify.assert_called_once()
 
     @mock.patch("subprocess.run")
-    def test_gateway_status_uses_launcher_and_supported_flag(self, run):
+    def test_gateway_status_requests_full_report(self, run):
         run.return_value = subprocess.CompletedProcess([], 0, "◆ Gateway Service\n  Status:       ✓ running\n", "")
         problems = []
         self.watchdog.check_gateway(problems)
         self.assertEqual(problems, [])
-        self.assertEqual(run.call_args.args[0], [str(Path.home() / ".local/bin/hermes"), "status"])
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0], [str(Path.home() / ".local/bin/hermes"), "status", "--full"])
+
+    @mock.patch("subprocess.run")
+    def test_gateway_status_falls_back_when_full_is_rejected(self, run):
+        run.side_effect = [
+            subprocess.CompletedProcess([], 2, "", "unrecognized arguments: --full"),
+            subprocess.CompletedProcess([], 0, "◆ Gateway Service\n  Status:       ✓ running\n", ""),
+        ]
+        problems = []
+        self.watchdog.check_gateway(problems)
+        self.assertEqual(problems, [])
+        self.assertEqual(run.call_args_list[1].args[0], [str(Path.home() / ".local/bin/hermes"), "status"])
+
+    @mock.patch("subprocess.run")
+    def test_gateway_summary_without_block_is_reported(self, run):
+        run.return_value = subprocess.CompletedProcess([], 0, "  Gateway:      ✓ running\n", "")
+        problems = []
+        self.watchdog.check_gateway(problems)
+        self.assertEqual(problems, ["could not find the Gateway Service status block in `hermes status` output"])
 
     @mock.patch("subprocess.run")
     def test_cron_list_uses_launcher(self, run):
