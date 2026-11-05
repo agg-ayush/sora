@@ -80,3 +80,16 @@ cold DB + non-delegated auto-inits.
   - `pending_rows(authority, ref)` — filters out `'local_automation_v1' in (row.get('payload') or {})` so internal automation turns are not broadcast as user-queued prompt bubbles.
 - `tui_gateway/session_history.py` (`Mac` + `sora`)
   - `_legacy_display_kind(role, text)` — recognizes `[IMPORTANT: Background process ` (`process_complete`) and `[ASYNC DELEGATION BATCH COMPLETE` (`async_delegation_complete`) when projecting any untyped row (e.g. a turn interrupted before post-turn stamping).
+
+## 3. Seatbelt Claude Teams OAuth route identity (`seatbelt-claude-teams.patch`)
+
+**Status:** applied + verified 2026-11-05 on Mac and `sora`.
+
+**Why.** Makes Hermes treat `https://<model-gateway>` / `<model-gateway>` (`providers.seatbelt`) as a native Claude Code OAuth route across main chat, thinking retention, and auxiliary calls (`_maybe_wrap_anthropic`), preventing 429s ("Third-party apps now draw from extra usage").
+
+**Files + functions changed:**
+
+- `agent/anthropic_credentials.py` — `anthropic_route_is_oauth` returns `True` for `seatbelt` / `<model-gateway-domain>` / `<model-gateway>`.
+- `agent/anthropic_endpoints.py` — `_is_third_party_anthropic_endpoint` returns `False` for Seatbelt/<model-gateway> hosts so signed thinking blocks are preserved.
+- `agent/auxiliary_client.py` — `_maybe_wrap_anthropic` sets `is_oauth=anthropic_route_is_oauth(base_url, api_key)` instead of hardcoded `False`.
+- `tests/agent/test_anthropic_route_oauth_identity.py` — regression tests for Seatbelt main + aux identity.
