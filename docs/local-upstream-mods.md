@@ -92,4 +92,5 @@ cold DB + non-delegated auto-inits.
 - `agent/anthropic_credentials.py` — `anthropic_route_is_oauth` returns `True` for `seatbelt` / `<model-gateway-domain>` / `<model-gateway>`.
 - `agent/anthropic_endpoints.py` — `_is_third_party_anthropic_endpoint` returns `False` for Seatbelt/<model-gateway> hosts so signed thinking blocks are preserved.
 - `agent/auxiliary_client.py` — `_maybe_wrap_anthropic` sets `is_oauth=anthropic_route_is_oauth(base_url, api_key)` instead of hardcoded `False`.
+- `agent/anthropic_message_convert.py` — `_sanitize_tool_id` strips TrueFoundry's `__thought__<base64>` suffix from Gemini 4 tool call IDs (and bounds length to `<=64` chars) so Bedrock/Anthropic doesn't 400 with `toolUseId failed to satisfy constraint` when switching mid-chat from Argon to Opus/Sonnet.
 - `tests/agent/test_anthropic_route_oauth_identity.py` — regression tests for Seatbelt main + aux identity.
