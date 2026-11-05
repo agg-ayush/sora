@@ -14,6 +14,44 @@ IS_MAC=false
 
 export PATH="$HOME/.local/bin:$PATH"
 
+# Shared local skills: link category-preserving repo copies on every host.
+# Skills-only mode avoids unrelated Claude Code skill changes during reconciliation.
+if [ -d "$REPO_DIR/skills/shared" ]; then
+  mkdir -p "$HERMES_HOME/cache"
+  while IFS= read -r skill_md; do
+    src="$(dirname "$skill_md")"
+    parent="$(dirname "$src")"
+    nested=false
+    while [ "$parent" != "$REPO_DIR/skills/shared" ]; do
+      if [ -f "$parent/SKILL.md" ]; then
+        nested=true
+        break
+      fi
+      parent="$(dirname "$parent")"
+    done
+    if [ "$nested" = true ]; then
+      continue
+    fi
+    rel="${src#"$REPO_DIR/skills/shared/"}"
+    case "$rel" in _root/*) rel="${rel#_root/}" ;; esac
+    dest="$HERMES_HOME/skills/$rel"
+    mkdir -p "$(dirname "$dest")"
+    if [ -L "$dest" ] && [ "$(readlink "$dest")" = "$src" ]; then
+      continue
+    fi
+    if [ -e "$dest" ] && [ ! -L "$dest" ]; then
+      mv "$dest" "$HERMES_HOME/cache/$(basename "$dest")-$(date +%Y%m%d-%H%M%S)-$$"
+    elif [ -L "$dest" ]; then
+      rm "$dest"
+    fi
+    ln -s "$src" "$dest"
+  done < <(find "$REPO_DIR/skills/shared" -name SKILL.md -type f)
+fi
+if [ "${HERMES_SKILLS_ONLY:-false}" = true ]; then
+  log "shared skills linked (skills-only mode)"
+  exit 0
+fi
+
 # 1. Core directory structure
 mkdir -p "$HERMES_HOME/plugins" \
          "$HERMES_HOME/skills/autonomous-ai-agents" \
@@ -80,38 +118,6 @@ link_skill() {
   fi
   ln -sfn "$src" "$dest"
 }
-# Shared local skills: link their category-preserving repo copies on every host.
-if [ -d "$REPO_DIR/skills/shared" ]; then
-  mkdir -p "$HERMES_HOME/cache"
-  while IFS= read -r skill_md; do
-    src="$(dirname "$skill_md")"
-    parent="$(dirname "$src")"
-    nested=false
-    while [ "$parent" != "$REPO_DIR/skills/shared" ]; do
-      if [ -f "$parent/SKILL.md" ]; then
-        nested=true
-        break
-      fi
-      parent="$(dirname "$parent")"
-    done
-    if [ "$nested" = true ]; then
-      continue
-    fi
-    rel="${src#"$REPO_DIR/skills/shared/"}"
-    case "$rel" in _root/*) rel="${rel#_root/}" ;; esac
-    dest="$HERMES_HOME/skills/$rel"
-    mkdir -p "$(dirname "$dest")"
-    if [ -L "$dest" ] && [ "$(readlink "$dest")" = "$src" ]; then
-      continue
-    fi
-    if [ -e "$dest" ] && [ ! -L "$dest" ]; then
-      mv "$dest" "$HERMES_HOME/cache/$(basename "$dest")-$(date +%Y%m%d-%H%M%S)-$$"
-    elif [ -L "$dest" ]; then
-      rm "$dest"
-    fi
-    ln -s "$src" "$dest"
-  done < <(find "$REPO_DIR/skills/shared" -name SKILL.md -type f)
-fi
 link_skill "$REPO_DIR/skills/brainlift-writer" "$HERMES_HOME/skills/brainlift-writer"
 PUBLIC_SKILLS="${PUBLIC_SKILLS:-$HOME/repos/public_skills}"
 if [ ! -d "$PUBLIC_SKILLS/.git" ]; then
