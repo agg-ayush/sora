@@ -166,7 +166,10 @@ def check_jobs(problems: list[str], expect: list[str], woke: datetime | None,
 
 
 def check_gateway(problems: list[str]) -> None:
-    r = run([hermes_executable(), "status"])
+    r = run([hermes_executable(), "status", "--full"])
+    if r.returncode == 2:
+        # Releases without --full print the full report by default.
+        r = run([hermes_executable(), "status"])
     if r.returncode != 0:
         problems.append(f"`hermes status` failed (exit {r.returncode}) — gateway may be down")
         return
