@@ -111,6 +111,20 @@ def _run(cmd: list[str], timeout: int = SUBPROCESS_TIMEOUT) -> subprocess.Comple
         return subprocess.CompletedProcess(cmd, 1, "", f"{type(exc).__name__}: {exc}")
 
 
+def _detached_tmux_launch(cmd: list[str]) -> list[str]:
+    """Start a fresh tmux server in its own systemd scope.
+
+    A server forked from inside the gateway's service unit lives in that unit's
+    cgroup, so restarting the gateway kills every session on it. A server that is
+    already running keeps its cgroup; only the first launch needs the scope.
+    """
+    if not sys.platform.startswith("linux") or shutil.which("systemd-run") is None:
+        return cmd
+    if _run(["tmux", "list-sessions"]).returncode == 0:
+        return cmd
+    return ["systemd-run", "--user", "--scope", "--quiet", "--collect", *cmd]
+
+
 def _artifact_dir(task_id: str) -> Path:
     return _tasks_root() / task_id
 
@@ -594,7 +608,10 @@ def _start(args: dict) -> dict:
         tfy_export = f"export TFY_API_KEY={shlex.quote(tfy_key)} && " if tfy_key else ""
         shell_cmd = f"{tfy_export}{shell_cmd}"
     try:
-        launch = _run(["tmux", "new-session", "-d", "-s", task_id, "-x", "160", "-y", "50", shell_cmd])
+        launch_args = ["tmux", "new-session", "-d", "-s", task_id, "-x", "160", "-y", "50", shell_cmd]
+        launch = _run(_detached_tmux_launch(launch_args))
+        if launch.returncode != 0 and launch.args[:1] == ["systemd-run"]:
+            launch = _run(launch_args)
         if launch.returncode != 0:
             return {"ok": False, "error": (launch.stderr or launch.stdout or "tmux new-session failed").strip()}
         if fifo_path is not None:

@@ -90,7 +90,7 @@ STOP and ask, same as any other unstated-in-brief ambiguity.
    is a Claude Code `/pr-review-toolkit:review-pr` session; delegate_task fallback
    only with explicit approval — different model group). Test-fix → a
    `delegate_task` sub-agent (the configured
-   delegation model — currently openai-group/gpt-6-sol). State +
+   `delegation.model`). State +
    control flow → kanban CLI + on-disk state. Do not blur these.
 5. **One writer per issue.** Never two concurrent implementation sessions on one
    issue. The kanban claim enforces this atomically. Distinct tasks across
@@ -493,7 +493,7 @@ back to Phase 2.
      `Object.prototype.hasOwnProperty.call` + a `__proto__`/`prototype`/`constructor`
      denylist, not a suppression comment) — re-run tests, push, re-poll checks.
 3. On failure, capture `BEFORE_SHA = git rev-parse HEAD` in the worktree, then
-   `delegate_task` a test-fixer (delegation model — currently gpt-6-sol). Its goal:
+   `delegate_task` a test-fixer (the configured `delegation.model`). Its goal:
    run the suite and fix ONLY small mechanical failures (missing dependency,
    trivial config/env). Constraint in its context, verbatim: "Do NOT modify
    implementation source. You may edit ONLY dependency/config/env files
