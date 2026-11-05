@@ -4,7 +4,7 @@ description: Operate TI hiring assessments, invites, and eval backfills.
 version: 1.1.0
 author: Ayush, Hermes Agent
 license: MIT
-platforms: [linux]
+platforms: [linux, macos]
 metadata:
   hermes:
     tags: [ti-hiring, recruiting, scheduling, gmail, transcript-eval]
@@ -18,7 +18,7 @@ Use for TI hiring assessment scheduling and admin calls, candidate email, colleg
 
 ## Core Procedure
 
-1. Read the relevant reference below. For infrastructure work, also read the existing remote `ti-hiring-operations/references/architecture-and-ops.md`; the legacy reference tree is **not bundled** in this four-SKILL consolidation.
+1. Read the relevant reference below. For infrastructure work, also read `references/architecture-and-ops.md` and the other preserved operational references in this skill.
 2. **Admin / candidate:** Resolve the candidate and session from the live orchestrator. Use the ops-box `ti-hiring-admin.sh` helper (not a printed bearer token). Classify status and end reason before booking, terminating, rescheduling, or communicating. Treat unzoned times as IST and confirm UTC conversion. For multi-part schedules, restate ADD and VVA unless the approved flow is explicitly ADD-only. Verify every sent message in startgreat's Sent mail.
 3. **College ADD batch:** Reconcile form rows with the snapshot, enumerate college spelling variants and email disagreements, dedupe by email, build/read back the college tab, and draft the cap-safe schedule. **Stop for explicit approval of schedule and email copy.** Only then create each session and verify its Meet link and individualized mail before sending; persist per-candidate idempotent outcomes. See `references/batch-invites.md`.
 4. **Transcript eval:** Dedupe by session ID; calculate capture digests from GCS; dispatch with all five environment fields, isolated per execution for authorized parallel runs; persist IDs immediately and read back the execution environment. Monitor completion and sheet writes separately. See `references/transcript-eval-backfill.md`.
