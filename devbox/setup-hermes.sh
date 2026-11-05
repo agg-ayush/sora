@@ -73,6 +73,22 @@ if [ -e "$PRT_LINK" ] && [ ! -L "$PRT_LINK" ]; then
 fi
 ln -sfn "$REPO_DIR/skills/pr-review-toolkit" "$PRT_LINK"
 
+link_skill() {
+  local src="$1" dest="$2"
+  if [ -e "$dest" ] && [ ! -L "$dest" ]; then
+    mv "$dest" "$HERMES_HOME/cache/$(basename "$dest")-$(date +%Y%m%d-%H%M%S)"
+  fi
+  ln -sfn "$src" "$dest"
+}
+link_skill "$REPO_DIR/skills/brainlift-writer" "$HERMES_HOME/skills/brainlift-writer"
+PUBLIC_SKILLS="${PUBLIC_SKILLS:-$HOME/repos/public_skills}"
+if [ ! -d "$PUBLIC_SKILLS/.git" ]; then
+  git clone -q https://github.com/<stakeholder>/public_skills.git "$PUBLIC_SKILLS" || log "public_skills clone failed; brainlift review/render unavailable"
+fi
+if [ -f "$PUBLIC_SKILLS/brainlift/SKILL.md" ]; then
+  link_skill "$PUBLIC_SKILLS/brainlift" "$HERMES_HOME/skills/brainlift"
+fi
+
 # 4. Hermes scripts + hooks (copied so watchdog check_script_drift sees exact byte parity)
 log "syncing scripts -> $HERMES_HOME/scripts/"
 COMMON_SCRIPTS=(

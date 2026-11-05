@@ -56,7 +56,9 @@ entirely, track unit progress via the plugin's own on-disk state
 (`~/.hermes/tasks/<task_id>/status.md` / `outcome.md`) and `git log`/`git
 status` directly, and report final status (design rounds used, gate results,
 PR link, any process hiccups) in your own final message instead of a kanban
-comment trail. Do NOT silently fall back on your own initiative when the brief
+comment trail. In this mode, call `set_phase` on each child task before gating
+it: the parent task's phase is not visible to newly started child tasks, and
+the plugin refuses to gate a task below phase 3. Do NOT silently fall back on your own initiative when the brief
 is silent on it — if it doesn't say what to do when kanban is unavailable,
 STOP and ask, same as any other unstated-in-brief ambiguity.
 
@@ -305,6 +307,12 @@ unit and link them: `hermes kanban link <parent-task_id> <child-task_id>`. This
 lets you track each unit's state independently and enables parallel execution
 where safe. Sequential units with dependencies stay as entries in the ledger.
 
+**Dependent units compose onto accepted commits.** Parallel drafts of dependent
+units may duplicate an earlier unit's helpers or state. Before a later unit's
+final review, rebuild its diff on the accepted base and run the combined gates;
+an isolated green run is provisional. The scope audit covers duplicate semantic
+mechanisms, not just duplicate files.
+
 **Design doc stays on the PARENT — children reference it, do NOT re-attach it.**
 The design doc is a single source of truth on the top-level (parent) task. Do NOT
 copy/attach it onto each child (duplication → drift). A child task carries only its
@@ -319,7 +327,10 @@ session per task, retained across units** — start it once (below), then steer
 the SAME session into each subsequent unit ("Read <unit-N-brief> and the design
 doc at <parent-design-path>, implement this unit. Commit when done.") instead
 of spawning a fresh session per unit. Start a new session only if the retained
-one died or hit a hard context wall.
+one died or hit a hard context wall. Before steering a retained session, confirm
+it still exists with `claude_orchestrate status`: completed sessions can vanish,
+and steering a missing one fails. If it is gone, start a new named session in
+the same workdir.
 1. Read the ledger attachment → first unit with `status:pending`. If none
    (all complete), go to Phase 3. (No ledger yet → derive units from the design
    doc, write the initial ledger, attach it, start at unit 1.)
@@ -805,6 +816,7 @@ you find it, not as a batch cleanup at the end — findings noted only in your
 head are lost when the session ends.
 
 ## Pitfalls
+- **Worker tool quirks** (kanban_create id echo, tool_call payload corruption, worker CLI mutation refusal, `gh pr checks --json` on gh 2.45, tmux submit) live in `references/worker-tool-pitfalls.md`. Read it before driving kanban workers or tmux sessions.
 - **Implementation sessions tend to bundle adjacent-but-unassigned functionality into the diff — audit the diff against the task's stated scope before Phase 4, don't just check the gate.** Observed: a task to build a "JSONL→markdown transcript adapter" also implemented an unrequested Google-Drive fetch/unpack/workflow-wiring step, roughly tripling the PR's size and duplicating logic that may already exist elsewhere in the pipeline (the user caught it only from the PR size: "why is this which is basically a transcription converter that big?"). Before opening/updating the PR, diff the actual changes against the task description — if the diff does something the task never asked for, split it into a separate task/PR (or drop it) rather than folding it in as "while I was there." This matters most when the user has pre-delegated merge trust (e.g. "assume I'm okay with these as long as comments aren't too verbose") — the PR won't get a manual scope read from them, so the scope check has to happen here, before the PR goes up.
 - **A fix that lands as commits on OTHER PRs' branches (not its own) loses
   traceability unless you deliberately restore it.** This happens when issue X's
