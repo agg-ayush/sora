@@ -32,8 +32,8 @@ Config: $HERMES_HOME/scripts/watchdog.json
                 "upstream-drift", "cost-guard", "dead-supervisors"],
      "channel": "telegram", "notify": true}
 
-`channel` is any target `hermes send -t` accepts. It exists because the machine
-whose Telegram is switched off still has to be able to shout.
+`channel` is any target `hermes send -t` accepts, or `ssh:<host>:<target>`
+for relaying through a host with that target configured.
 
 Schedule (launchd, every 30 min) — see config/ai.hermes.watchdog.plist.
 """
@@ -50,6 +50,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import _platform  # type: ignore
+from _alert_relay import hermes_executable, send_alert
 
 HERMES_HOME = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
 CONFIG = HERMES_HOME / "scripts" / "watchdog.json"
@@ -103,7 +104,7 @@ def parse_dt(s: str) -> datetime | None:
 
 def check_jobs(problems: list[str], expect: list[str], woke: datetime | None,
                suppressed: list[str]) -> None:
-    r = run(["hermes", "cron", "list"])
+    r = run([hermes_executable(), "cron", "list"])
     if r.returncode != 0:
         problems.append(f"`hermes cron list` failed (exit {r.returncode}): {(r.stderr or r.stdout).strip()[:200]}")
         return
@@ -165,7 +166,7 @@ def check_jobs(problems: list[str], expect: list[str], woke: datetime | None,
 
 
 def check_gateway(problems: list[str]) -> None:
-    r = run(["hermes", "status", "--full"])
+    r = run([hermes_executable(), "status"])
     if r.returncode != 0:
         problems.append(f"`hermes status` failed (exit {r.returncode}) — gateway may be down")
         return
@@ -296,7 +297,7 @@ def alert(problems: list[str], channel: str | None, use_notify: bool) -> None:
     sys.stdout.write(body + "\n")
 
     if channel:
-        r = run(["hermes", "send", "-t", channel, body])
+        r = send_alert(channel, body)
         if r.returncode != 0:
             print(
                 f"watchdog: ALERT TO {channel.upper()} FAILED (exit {r.returncode}): "

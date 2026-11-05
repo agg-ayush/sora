@@ -76,8 +76,10 @@ ln -sfn "$REPO_DIR/skills/pr-review-toolkit" "$PRT_LINK"
 # 4. Hermes scripts + hooks (copied so watchdog check_script_drift sees exact byte parity)
 log "syncing scripts -> $HERMES_HOME/scripts/"
 COMMON_SCRIPTS=(
+  _alert_relay.py
   _platform.py
   _watermark.py
+  auth-canary-relay.py
   auth-canary.py
   auto_complete_merged.py
   deny-guard.sh
