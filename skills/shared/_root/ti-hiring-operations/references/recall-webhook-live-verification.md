@@ -1,0 +1,37 @@
+# Recall webhook: live verification, deploy drift and secret hygiene
+
+Use when verifying the Recall realtime webhook path, running a live Meet canary with a human, or reacting to a suspected callback-credential exposure.
+
+## 1. Verify the live route after EVERY deploy, not just the fixing deploy
+1. A green GitHub Actions deploy and CloudFormation UPDATE_COMPLETE do not prove the webhook is wired. A later unrelated merge to main can redeploy with a stack parameter (e.g. the webhook token SSM parameter name) reset to empty, silently dropping the env var from the new task definition.
+2. After any main deploy, read back by name only (never values): the stack parameter for the token parameter name, the ECS task-definition revision now running, and whether the webhook token env/secret is present on that revision. Use explicit `aws --profile trilogy --region ap-south-1`.
+3. Probe the callback unauthenticated: expected 401 (route live, auth enforced). 404 means the route is disabled because the token is missing, not an auth problem.
+4. The durable fix is deploy-side: the deploy must preserve the existing parameter value or fail closed when it is empty, with a regression test. Re-verifying by hand after each deploy is a stopgap.
+5. Post-merge readback checklist for a deploy-side fix (all by name/metadata): `gh run view` on the queued main deploy shows success on the exact merge SHA; CFN stack UPDATE_COMPLETE with the same token parameter name; SSM parameter version unchanged (a deploy must not bump or reset it); EVERY service that runs the orchestrator image (browser and SSH services) is steady 1/1 on a task-def revision whose image tag equals the merge SHA and whose `secrets[]` still names the token; unauth probe 401. Checking only one service misses drift on the sibling.
+   Capture a baseline of the selected stack parameters (infra toggle, scale bounds, desired counts, bucket, signer serial, websearch flag, token parameter name) BEFORE merging, then assert zero delta after the deploy in one scripted check with `assert`s, so drift fails loudly instead of being eyeballed.
+6. When a fail-closed fix lands for one stack parameter, audit the sibling `describe-stacks` readbacks in the same deploy script (infra toggles, scale bounds, bucket, signer serial) for the same fail-open-to-empty pattern. File any found as a separate focused task and route it; the user's rule is fix every finding, not just the one that bit.
+7. Several deploy-script fixes in flight at once: merge each independently (deploys queue in GitHub; do not serialize merges for deploy overlap). When two touch the same `deploy.sh`/stub tests, merge the one sequenced first, then have the other's owner rebase the SAME PR/worktree, carry forward every earlier guard and rerun all stub suites, CI and review on the new pushed head. Never merge its old green head: those checks ran on a base that no longer exists. Open any further finding on that file as a card created blocked, with a note that it unblocks only after the in-flight PR merges and deploys, and branch it from fresh main then.
+8. Scope the claim honestly: a green deploy plus 401 plus a synthetic signed/token event proves wiring and auth, not that a real Recall bot's participant events reach the candidate session. An in-service test of internal endpoints (e.g. via ECS exec) likewise does not prove public vendor callback delivery. Keep the real-bot delivery retest open until it runs.
+
+## 2. Sanitize Recall bot reads before they reach any tool output
+- A Recall `get_bot`/`list_bots` payload includes `realtime_endpoints[].url`, which carries the production webhook token as a query parameter. Calling the connector directly serializes the secret into the transcript.
+- Read bots through a bounded script that strips or redacts endpoint URLs before printing (IDs, status, participant events only). Never paste, hash-display or log the URL.
+- If a token-bearing URL does land in a transcript, treat the token as exposed:
+  1. Do not repeat the value anywhere (chat, board, PR, artifacts).
+  2. Open a read-only scoping task: count active bots using the callback (count/IDs only), SSM parameter version metadata, effective ECS/CFN wiring by name.
+  3. Draft a rotation plan: new random value into the EXISTING SecureString path, overlap for active bots, verify old token rejected and new accepted with a bounded synthetic event.
+  4. Stop at an explicit human approval with exact resource names and blast radius before overwriting the shared secret. Earlier approvals for tests or IAM repairs do not cover the rotation. A direct user instruction to rotate is that approval; route it to a dispatcher worker immediately rather than re-asking.
+  5. Rotation-time safety check: re-run the preflight right before writing (zero active bots holding the old callback URL AND zero nonterminal candidate sessions). If both are zero, rotate without an overlap window; if not, keep the old token accepted until those bots end. Then force-roll every service using the secret and verify old token 401, new token 200 with one persisted synthetic event.
+  6. Refresh expired SAML AWS creds before launching the rotation worker; an expired-token failure mid-rotation leaves the secret written but services not rolled.
+
+## 3. Bot presence check: when it fires
+- Booking-time scheduling (Meet + scheduled Recall bot + GET readback) proves the bot was accepted, not that it joined. Presence is a separate check.
+- The candidate-join boundary is the authenticated wrapper-app Google sign-in. At that point the session moves toward provisioning, and our orchestrator checks the scheduled bot's real provider status. If it is absent, it rules out a bot still joining or an ambiguous response, then adopts or replaces it idempotently (never a blind second bot). colleague provisioning runs at that same boundary, never at schedule time.
+- No scheduled-clock presence poll unless the user explicitly asks for one. When asked whether to check earlier, give the tradeoff plainly: an extra due action on the existing lifecycle sweeper (claim/status writes, no new service), one Recall `GET /bot/{id}` per assessment including no-shows (workspace limit is read-only verifiable via the Recall MCP `list_rate_limits`; 300/min at last check), and double reads if both checks run. Recommend measuring real join-time bot-ready delay in the integrated e2e before adding it.
+- When the user's wording about bot-check timing is ambiguous ("at the scheduled time" vs "when they join"), ask with clarify naming the concrete options; do not silently reopen or implement the clock-trigger variant.
+
+## 4. Live human canaries (phone / laptop / second laptop)
+- One bot, one Meet per canary. Never launch a duplicate while one is live; an independent reviewer waits on that same bot.
+- If the webhook failed mid-canary, do not ask the human to redo it right away. First pull the bot's retained async participant history and event timeline through the authenticated API, then map what it proves (vendor event capability) against what it cannot prove (live webhook ACK and persistence).
+- Ask for a repeat only after the callback is restored (401 probe passes), and only for the specific missing events, not the whole sequence. Ask for a Recall dashboard action only when the API genuinely cannot do it, naming the exact action and why.
+- Finish cleanup of the exact test bot and Meet, then read back to confirm.

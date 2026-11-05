@@ -1,0 +1,7 @@
+# Deploy pipeline and demo verification
+
+Before a manual deploy, identify the workflow's actual concurrency policy and competing runs. GitHub Actions permits concurrent runs unless a workflow/job `concurrency` group constrains them; do not assume runs queue. If cancelling a competing run is authorized, inspect it again until `status=completed` and `conclusion=cancelled` (or another final conclusion), then trigger the intended exact-ref workflow. A cancel request alone does not prove that the old deployment stopped.
+
+Follow the whole deploy through a final conclusion. Check the image digest/revision, ECS desired versus running counts (where ECS is used), new task health and *its* logs, public endpoint response, and observed behavior on the exact version just deployed. A healthy container or a green earlier stage does not prove post-swap activation/publish steps succeeded. If a replace-before-health sequence can remove the working service, fix the deploy's ordering/guard before cutover; exercise a safe dry run, then verify a real permitted run end-to-end.
+
+For a demo/preview, serve the branch artifact from a clearly identified build and verify that the exact preview URL returns that revision. Check cache and auth redirects as viewed by a normal authorized browser, not only a localhost `curl`. Never mint a bypass credential or weaken an auth gate for a demo without explicit security approval; keep demo and production boundaries separate. Record the public URL only after an actual fetch and visual/function check.

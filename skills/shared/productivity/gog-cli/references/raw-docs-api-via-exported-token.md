@@ -1,0 +1,7 @@
+# Raw Docs API escape hatch
+
+First check `gog docs --help`, `gog docs format --help`, and `gog api list`: newer builds expose tab-scoped formatting and `gog api call docs v1 documents.batchUpdate --allow-write`, so an exported OAuth token is usually unnecessary. `--params` holds path/query parameters, `--body` holds JSON. Include `tabId` on each range/location; preflight comments and verify the exact tab after a write. Never print a token, command arguments containing one, or a document body with secrets.
+
+If a required operation is not in the native CLI or raw-method surface, use `gog auth tokens export <account> --out <private-scratch>/token.json`, then chmod 600 and read it only from a short-lived local script. Remove the token file on exit, including failure paths; do not store it under `/tmp`, in a repository, a shareable Doc or a log. Avoid passing token bytes on the process command line. Expired exported tokens return 401; renew only after confirming the account/scopes.
+
+Read a multi-tab document with `includeTabsContent=true`; inspect `tabs[].documentTab.body.content` and the fresh `tabId`. In `insertText`, `deleteContentRange` and `updateParagraphStyle`, set that `tabId` inside every `location`/`range`. Compute indices from the target tab's current structure, account for shifts after each operation (or apply from highest index down), exclude the terminal newline in delete ranges and re-read exact text, styles, comments and siblings. See `references/multi-tab-doc-editing.md` and `references/index-based-edit-and-style-drift-pitfalls.md`.

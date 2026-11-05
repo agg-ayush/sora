@@ -1,0 +1,7 @@
+# Forensics for slow multi-agent builds
+
+Build a timeline from durable board events/run records, PR timestamps, agent session transcripts, and infrastructure events. Query the active profile's board and session stores read-only; inspect their actual schema before composing joins. Join a worker transcript to a task using the task/run ID *and* contemporaneous claim or worktree evidence, not a coincidental title. Read executed tool calls and results, not a quoted skill passage that merely mentions a command.
+
+For each card, separate calendar elapsed time, actual active worker intervals, queue/approval gaps, review-and-fix rounds, and failures/retries. Overlapping worker runs must be unioned for wall-time accounting; adding their durations produces worker-hours, not elapsed time. Wall minus measured active intervals is an **unexplained remainder**, not automatically queue time; investigate missing transcripts and monitoring gaps.
+
+Mark hypotheses and counterevidence: an infra repair and a model change happening near a throughput improvement do not isolate either cause. Distinguish model latency from process crashes, lock contention, retries, idle prompts, human decisions, and base CI failures using time-stamped source evidence. Give per-card deltas and the critical path rather than an invented single causal percentage. Cite the exact run/commit/log location and state where telemetry is incomplete.

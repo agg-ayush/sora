@@ -1,0 +1,7 @@
+# Retain sessions inside phases, checkpoint between phases
+
+For an authorized design→review→implementation pipeline, keep the design author across focused design-revision rounds when the session is live and context remains useful. Give each independent reviewer a **fresh** session and the actual latest artifact. At the design→implementation boundary, checkpoint the accepted design and review decisions to disk so a fresh implementer can follow them without the designer's hidden context.
+
+Retain the implementer across its units and review-fix rounds **when the owning workflow supports a continuous session**; another workflow may deliberately create a bounded fresh fixer. Do not apply a blanket 'always retain' policy in conflict with that T2's specified procedure. A crash, context exhaustion or changed authorization warrants a fresh session on the **same preserved worktree** with the latest artifact and verdict, after confirming no previous writer remains alive. Independent reviewers must not be the author or accept the author's summary as their sole input.
+
+Explain the trade-off when changing the pipeline: retention saves re-reading and preserves rejected alternatives, while phase checkpoints reduce context rot, allow a second model, make failure recovery possible, and expose an unclear design when a fresh implementer cannot execute it. Treat it as a scoped preference for this workflow, not a universal assertion about every user.

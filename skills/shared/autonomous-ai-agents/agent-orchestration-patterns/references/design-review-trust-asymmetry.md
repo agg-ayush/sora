@@ -1,0 +1,5 @@
+# Review trust asymmetry without over-engineering
+
+When a design rejects a simple label-based solution because the model might misclassify, yet uncritically accepts that model's underlying finding, examine both trust assumptions. The classification can be an **additional safety gate**: a false label may suppress a real finding even if the finding's text is otherwise credible. Neither 'classification is easier' nor 'the finding is trusted' proves it safe to accept the label.
+
+Ask what failure each choice permits, how often it occurs on representative examples, and whether a small deterministic check or an abstain-on-uncertain policy can contain it. Compare the proposed implementation size with the task's acceptance criteria, then choose on measured risk/benefit—not an arbitrary line-count estimate or a blanket claim that one model judgment is safer than another. Require a test where a candidate-facing objection is mislabeled evaluator-internal and verify the gate never silently dismisses it.

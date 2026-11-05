@@ -1,0 +1,5 @@
+# Rework after a substantive requirement correction
+
+When the user changes a task's **meaning** after a PR is open, read back the old versus new acceptance criterion and confirm whether the new one supersedes the old. Re-ground in the actual source and tests; use the owning T2's design-author/reviewer loop to settle the revised mechanism, then re-implement, rerun focused tests and independent review, and update the **same PR** title/body unless the user asks for a separate scope. Do not claim an unchanged green check covers a new commit. Preserve the user's explicit 'do not merge as-is' gate; an updated PR still needs the specified approval.
+
+A narrow final-round blocker may warrant a focused amendment rather than a wholly new design, but send it to the **owning author/T2**, not a supervisor editing the doc directly. Verify the amendment and its review disposition, even when the change sounds mechanical. A structural choice or ambiguity goes to the human; do not infer approval from the review cap. See `multi-round-review-convergence.md`.
