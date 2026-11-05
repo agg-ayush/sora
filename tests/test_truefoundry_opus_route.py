@@ -66,12 +66,15 @@ class TruefoundryOpusRouteTest(unittest.TestCase):
 
     def test_default_provider_is_seatbelt(self):
         # omitted model_provider resolves to seatbelt, not truefoundry
+        launched = []
         with patch.object(claude_orchestrate, "_session_exists", return_value=False), \
-             patch.object(claude_orchestrate, "_tasks_root", return_value=Path("/tmp")):
+             patch.object(claude_orchestrate, "_tasks_root", return_value=Path("/tmp")), \
+             patch.object(claude_orchestrate, "_seatbelt_headers", side_effect=ValueError("no headers in test")), \
+             patch.object(claude_orchestrate, "_run", side_effect=lambda cmd, timeout=None: launched.append(cmd)):
             res = claude_orchestrate._start(self._base_args(model="opus"))
-            # seatbelt path proceeds past provider validation (fails later on
-            # header lookup in a test env, but NOT with the anthropic-primary error)
             self.assertNotIn("anthropic-primary", res.get("error", ""))
+            self.assertIn("no headers in test", res.get("error", ""))
+            self.assertEqual(launched, [])
 
 
 class CodexWorktreeTrustTest(unittest.TestCase):
