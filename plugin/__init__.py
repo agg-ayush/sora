@@ -678,7 +678,7 @@ def _start(args: dict) -> dict:
     # rely on capture-pane polling in `status` instead.
     if sys.platform != "win32":
         tmux_log = artifact_dir / "tmux.log"
-        _run(["tmux", "pipe-pane", "-o", "-t", task_id, f"exec >> {shlex.quote(tmux_log.as_posix())}"])
+        _run(["tmux", "pipe-pane", "-o", "-t", task_id, f"cat >> {shlex.quote(tmux_log.as_posix())}"])
 
     meta = {
         "task_id": task_id,
