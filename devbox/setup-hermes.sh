@@ -14,6 +14,55 @@ IS_MAC=false
 
 export PATH="$HOME/.local/bin:$PATH"
 
+# Claude-only mode reconciles skills without touching Hermes skills, plugins,
+# settings, scripts or any running service.
+link_claude_skill() {
+  local src="$1" dest="$2" name
+  name="$(basename "$dest")"
+  if [ -L "$dest" ] && [ "$(readlink "$dest")" = "$src" ]; then
+    return 0
+  fi
+  if [ -e "$dest" ] && [ ! -L "$dest" ]; then
+    local backup
+    backup="$(mktemp -d "$HERMES_HOME/cache/$name-$(date +%Y%m%d-%H%M%S)-XXXXXX")"
+    mv "$dest" "$backup/$name"
+    log "backed up Claude Code $name to $backup/$name"
+  elif [ -L "$dest" ]; then
+    rm "$dest"
+  fi
+  ln -s "$src" "$dest"
+}
+
+link_claude_skills() {
+  local src name public_skills
+  mkdir -p "$CLAUDE_HOME/skills" "$HERMES_HOME/cache" "$SEATBELT_DIR"
+  for src in "$REPO_DIR"/skills/claude/*; do
+    if [ ! -d "$src" ] || [ ! -f "$src/SKILL.md" ]; then
+      continue
+    fi
+    name="$(basename "$src")"
+    link_claude_skill "$src" "$CLAUDE_HOME/skills/$name"
+  done
+  public_skills="${PUBLIC_SKILLS:-$HOME/repos/public_skills}"
+  if [ ! -f "$public_skills/brainlift/SKILL.md" ]; then
+    git clone -q https://github.com/<stakeholder>/public_skills.git "$public_skills" || log "public_skills clone failed; Claude Code brainlift unavailable"
+  fi
+  if [ -f "$public_skills/brainlift/SKILL.md" ]; then
+    link_claude_skill "$public_skills/brainlift" "$CLAUDE_HOME/skills/brainlift"
+  else
+    log "Claude Code brainlift source missing: $public_skills/brainlift"
+  fi
+  if [ ! -L "$SEATBELT_DIR/skills" ] || [ "$(readlink "$SEATBELT_DIR/skills")" != "$CLAUDE_HOME/skills" ]; then
+    link_claude_skill "$CLAUDE_HOME/skills" "$SEATBELT_DIR/skills"
+  fi
+}
+
+if [ "${CLAUDE_SKILLS_ONLY:-false}" = true ]; then
+  link_claude_skills
+  log "Claude Code skills linked (Claude-only mode)"
+  exit 0
+fi
+
 # Shared local skills: link category-preserving repo copies on every host.
 # Skills-only mode avoids unrelated Claude Code skill changes during reconciliation.
 if [ -d "$REPO_DIR/skills/shared" ]; then
@@ -183,16 +232,8 @@ fi
 
 # 6. Claude Code seatbelt config sync (symlinks CLAUDE.md, skills/, plugins/ to ~/.claude)
 log "syncing Claude Code seatbelt config ($SEATBELT_DIR -> $CLAUDE_HOME)"
-UI_FLOW_LINK="$CLAUDE_HOME/skills/ui-flow"
-if [ -e "$UI_FLOW_LINK" ] && [ ! -L "$UI_FLOW_LINK" ]; then
-  mkdir -p "$HERMES_HOME/cache"
-  UI_FLOW_BACKUP="$(mktemp -d "$HERMES_HOME/cache/ui-flow-$(date +%Y%m%d-%H%M%S)-XXXXXX")"
-  mv "$UI_FLOW_LINK" "$UI_FLOW_BACKUP/ui-flow"
-  log "backed up Claude Code ui-flow skill to $UI_FLOW_BACKUP/ui-flow"
-fi
-ln -sfn "$REPO_DIR/skills/claude/ui-flow" "$UI_FLOW_LINK"
+link_claude_skills
 [ -f "$CLAUDE_HOME/CLAUDE.md" ] && ln -sfn "$CLAUDE_HOME/CLAUDE.md" "$SEATBELT_DIR/CLAUDE.md"
-ln -sfn "$CLAUDE_HOME/skills" "$SEATBELT_DIR/skills"
 ln -sfn "$CLAUDE_HOME/plugins" "$SEATBELT_DIR/plugins"
 
 # Copy patched pr-review-toolkit specialist if pr-review-toolkit is in cache
