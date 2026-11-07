@@ -218,8 +218,14 @@ apply_hermes_patches || log "WARNING: Hermes source patch step errored; continui
 
 # 3c. hermes-session-reset-policy plugin: config.yaml's session_reset policy does nothing without it.
 if command -v hermes >/dev/null 2>&1; then
-  if COLUMNS=250 hermes plugins list 2>/dev/null | grep -q "hermes-session-reset-policy"; then
-    log "hermes-session-reset-policy plugin already installed"
+  # Capture output first: `grep -q` on a pipe SIGPIPEs hermes and fails the pipeline under pipefail.
+  plugin_rows="$(hermes plugins list --plain 2>/dev/null || true)"
+  if printf '%s\n' "$plugin_rows" | grep -Eq "^enabled[[:space:]].*[[:space:]]hermes-session-reset-policy$"; then
+    log "hermes-session-reset-policy plugin already installed and enabled"
+  elif printf '%s\n' "$plugin_rows" | grep -Eq "[[:space:]]hermes-session-reset-policy$"; then
+    log "enabling installed hermes-session-reset-policy plugin"
+    hermes plugins enable hermes-session-reset-policy \
+      || log "WARNING: could not enable hermes-session-reset-policy; session_reset policy inactive"
   else
     log "installing hermes-session-reset-policy plugin"
     hermes plugins install hermes-session-reset-policy --yes-deps --enable \
@@ -228,7 +234,8 @@ if command -v hermes >/dev/null 2>&1; then
 
   # 3d. hermes-hygiene weekly cron (storage/health sweep, script-only). Created only if no job has that
   # name; an existing job (e.g. the remote's Telegram-delivered one) is left alone.
-  if hermes cron list --all 2>/dev/null | grep -Eq "Name:[[:space:]]+hermes-hygiene([[:space:]]|$)"; then
+  cron_rows="$(hermes cron list --all 2>/dev/null || true)"
+  if printf '%s\n' "$cron_rows" | grep -Eq "Name:[[:space:]]+hermes-hygiene[[:space:]]*$"; then
     log "hermes-hygiene cron already present"
   elif [ -f "$HERMES_HOME/scripts/hermes-hygiene.py" ] || [ -f "$REPO_DIR/scripts/hermes-hygiene.py" ]; then
     mkdir -p "$HERMES_HOME/scripts"
