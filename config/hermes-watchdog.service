@@ -1,0 +1,8 @@
+[Unit]
+Description=Hermes Watchdog
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/.hermes/scripts/watchdog.py
+Environment=HOME=%h
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin

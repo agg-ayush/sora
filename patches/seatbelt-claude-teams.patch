@@ -1,0 +1,129 @@
+diff --git a/agent/anthropic_credentials.py b/agent/anthropic_credentials.py
+index be1df48e298..d6707a22e8c 100644
+--- a/agent/anthropic_credentials.py
++++ b/agent/anthropic_credentials.py
+@@ -86,6 +86,11 @@ def anthropic_route_is_oauth(base_url: Any, credential: Any, *, provider: Option
+     materialized once for the shape test (``CommandTokenSource`` caches, so this never double-mints)
+     and a mint failure classifies as non-OAuth — the wire client surfaces the real error.
+     """
++    host = base_url_hostname(str(base_url or "")).rstrip(".")
++    provider_name = (provider or "").strip().lower()
++    if (host in {"<model-gateway>", "<model-gateway-domain>"} or "seatbelt" in host
++            or any(marker in provider_name for marker in ("truefoundry", "claude-teams", "seatbelt"))):
++        return True  # Trilogy Claude Teams gateway: Claude Code identity by trusted route
+     if not (is_native_anthropic_host(base_url) or (provider or "").strip().lower() == "anthropic"):
+         return False
+     if callable(credential) and not isinstance(credential, str):
+diff --git a/agent/anthropic_endpoints.py b/agent/anthropic_endpoints.py
+index d8a7152f3ed..797c9a09781 100644
+--- a/agent/anthropic_endpoints.py
++++ b/agent/anthropic_endpoints.py
+@@ -29,6 +29,8 @@ def _is_third_party_anthropic_endpoint(base_url: str | None) -> bool:
+     """Any non-anthropic.com endpoint (own x-api-key keys; skip OAuth detection). No base_url =
+     direct Anthropic API."""
+     normalized = _normalized_lower(base_url)
++    if "<model-gateway>" in normalized or "<model-gateway-domain>" in normalized or "seatbelt" in normalized:
++        return False
+     return bool(normalized) and "anthropic.com" not in normalized
+ 
+ 
+diff --git a/agent/anthropic_message_convert.py b/agent/anthropic_message_convert.py
+index 0372b0581ac..1506fcf3ea3 100644
+--- a/agent/anthropic_message_convert.py
++++ b/agent/anthropic_message_convert.py
+@@ -5,6 +5,7 @@ scrubbing). Endpoint predicates come from ``agent/anthropic_endpoints.py`` so th
+ imports the adapter (no cycle)."""
+ 
+ import copy
++import hashlib
+ import json
+ import logging
+ import re
+@@ -113,8 +114,15 @@ def normalize_model_name(model: str, preserve_dots: bool = False) -> str:
+ 
+ 
+ def _sanitize_tool_id(tool_id: str) -> str:
+-    """Anthropic requires ids matching [a-zA-Z0-9_-]; replace the rest, never empty."""
+-    return (re.sub(r"[^a-zA-Z0-9_-]", "_", tool_id) if tool_id else "") or "tool_0"
++    """Anthropic/Bedrock require ids matching [a-zA-Z0-9_-] and <=64 chars; strip TrueFoundry __thought__ suffix or hash-truncate >64 chars."""
++    if not tool_id:
++        return "tool_0"
++    if "__thought__" in tool_id:
++        tool_id = tool_id.split("__thought__", 1)[0]
++    cleaned = re.sub(r"[^a-zA-Z0-9_-]", "_", tool_id) or "tool_0"
++    if len(cleaned) > 64:
++        cleaned = f"{cleaned[:47]}_{hashlib.sha256(cleaned.encode()).hexdigest()[:16]}"
++    return cleaned
+ 
+ 
+ def _tool_use_block(tool_id: Any, name: Any, tool_input: Any) -> dict[str, Any]:
+diff --git a/agent/auxiliary_client.py b/agent/auxiliary_client.py
+index ac2566dea2d..1769d5bd073 100644
+--- a/agent/auxiliary_client.py
++++ b/agent/auxiliary_client.py
+@@ -1942,7 +1942,12 @@ def _maybe_wrap_anthropic(
+         "(model=%s, base_url=%s, api_mode=%s)",
+         model, base_url[:60] if base_url else "", api_mode or "auto-detected",
+     )
+-    return AnthropicAuxiliaryClient(real_client, model, api_key, base_url, is_oauth=False)
++    # Same route-identity rule as every other Anthropic path: a Claude Code OAuth route (native host
++    # with an OAuth credential, or the Trilogy Seatbelt/<model-gateway> gateway) needs the identity
++    # transforms here too, or the subscription seat 429s side calls (titles, compression).
++    from agent.anthropic_credentials import anthropic_route_is_oauth
++    return AnthropicAuxiliaryClient(real_client, model, api_key, base_url,
++                                    is_oauth=anthropic_route_is_oauth(base_url, api_key))
+ 
+ 
+ def _read_nous_auth() -> Optional[dict]:
+diff --git a/tests/agent/test_anthropic_route_oauth_identity.py b/tests/agent/test_anthropic_route_oauth_identity.py
+index f53cb2f303d..005192b3c01 100644
+--- a/tests/agent/test_anthropic_route_oauth_identity.py
++++ b/tests/agent/test_anthropic_route_oauth_identity.py
+@@ -31,7 +31,17 @@ def test_route_identity_requires_native_host_and_oauth_shape():
+     assert anthropic_route_is_oauth("", OAUTH) is True  # empty = native default route
+     # provider=anthropic behind a proxy keeps today's behaviour (identity travels with the provider).
+     assert anthropic_route_is_oauth("https://proxy.example.com", OAUTH, provider="anthropic") is True
+-    # Third-party hosts and Console keys never qualify; a callable that cannot mint is non-OAuth.
++    # Trilogy's Claude Teams gateways intentionally carry Claude Code OAuth identity even when
++    # their gateway credentials are opaque or minted outside Anthropic's native token format.
++    assert anthropic_route_is_oauth("https://<model-gateway>/v1", "opaque") is True
++    assert anthropic_route_is_oauth("https://<model-gateway-domain>/anthropic", "opaque") is True
++    assert anthropic_route_is_oauth(
++        "https://gateway.example.com/anthropic", "opaque", provider="truefoundry-claude-teams"
++    ) is True
++    assert anthropic_route_is_oauth(
++        "https://gateway.example.com/anthropic", "opaque", provider="seatbelt"
++    ) is True
++    # Unrelated third-party hosts and Console keys never qualify; a callable that cannot mint is non-OAuth.
+     assert anthropic_route_is_oauth("https://api.minimax.io/anthropic", key_cmd) is False
+     assert anthropic_route_is_oauth("https://api.anthropic.com", CONSOLE) is False
+     # Neither do user-scoped sk-ant-usr* API keys: they pay per token, not via a Claude
+@@ -73,3 +83,28 @@ def test_key_cmd_oauth_route_builds_claude_code_identity_on_main_and_aux_clients
+     monkeypatch.setattr(aux, "_resolve_custom_runtime", lambda: ("https://api.minimax.io/anthropic", key_cmd, "anthropic_messages"))
+     third_party_aux, _model = aux._try_custom_endpoint()
+     assert isinstance(third_party_aux, AnthropicAuxiliaryClient) and third_party_aux.chat.completions._is_oauth is False
++
++
++def test_trilogy_seatbelt_gateway_keeps_claude_code_identity_and_native_thinking():
++    """The Seatbelt gateway proxies a Claude Teams seat: without the Claude Code identity Anthropic
++    429s/400s Opus and Sonnet, and treating it as third-party would strip prior signed thinking."""
++    from agent.anthropic_endpoints import _is_third_party_anthropic_endpoint
++
++    seatbelt = "https://<model-gateway>"
++    assert anthropic_route_is_oauth(seatbelt, "dummykey") is True
++    assert _is_third_party_anthropic_endpoint(seatbelt) is False
++    assert _is_third_party_anthropic_endpoint("https://api.minimax.io/anthropic") is True
++
++
++@pytest.mark.parametrize("base_url,expected", [
++    ("https://<model-gateway>", True),  # Trilogy gateway: Claude Code identity
++    ("https://api.minimax.io/anthropic", False),  # third-party Anthropic-protocol endpoint: never
++])
++def test_auxiliary_anthropic_wrapper_uses_route_identity(base_url, expected):
++    """Side calls (titles, compression) built via the generic Anthropic wrapper used to hardcode
++    is_oauth=False, so the Seatbelt seat 429'd them while the main chat worked."""
++    from agent.auxiliary_client import _maybe_wrap_anthropic
++
++    wrapped = _maybe_wrap_anthropic(object(), "claude-teams-group/claude-opus-5-5", "dummykey", base_url,
++                                    "anthropic_messages")
++    assert wrapped.chat.completions._is_oauth is expected

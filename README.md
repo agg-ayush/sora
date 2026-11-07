@@ -11,7 +11,8 @@ plugins/    pr-review-toolkit patches (state-transition-reviewer specialist)
 skills/     tier1-suborchestration + tier2-orchestration skills
 scripts/    orphan-reaper.py (self-healing watchdog) + hermes-hygiene.py (weekly storage/health) + error-journal.py (failure capture) + watch_ci_main.py (CI watcher) + deny-guard.sh (T3 hook) + subagent-ledger-hook.py (subagent_stop hook → delegation ledger) + aws-token-refresh-hook.sh (post_tool_call hook → auto saml2aws refresh)
 docs/       hermes-tiers-reference.md (canonical architecture) + audit.md
-config/     config.yaml.template, env.template, zshrc-snippet.sh (NO secrets)
+config/     config.yaml.template (current routing, regenerated from the live Mac config), env.template, zshrc-snippet.sh, watchdog launchd/systemd units (NO secrets)
+patches/    local Hermes source patches applied by setup-hermes.sh
 ```
 
 ## Install / Sync (Mac or Ubuntu EC2 `sora`)
@@ -58,6 +59,7 @@ See `docs/hermes-tiers-reference.md` for the full architecture reference.
 ## Local upstream mods
 
 We carry a small number of local patches to the live `~/.hermes/hermes-agent`
-clone that are NOT pushed upstream (currently: readonly kanban connect for
-delegated children, which powers the T1 background kanban watcher). See
-`docs/local-upstream-mods.md` — re-apply after every `hermes update`.
+clone that are NOT pushed upstream (Seatbelt Claude Teams OAuth route identity,
+session-bubble fix). They live in `patches/*.patch` and `devbox/setup-hermes.sh`
+applies them idempotently. See `docs/local-upstream-mods.md` — re-run setup
+after every `hermes update`.

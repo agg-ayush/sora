@@ -176,6 +176,97 @@ if [ -f "$PUBLIC_SKILLS/brainlift/SKILL.md" ]; then
   link_skill "$PUBLIC_SKILLS/brainlift" "$HERMES_HOME/skills/brainlift"
 fi
 
+# 3b. Local Hermes source patches (patches/*.patch; see docs/local-upstream-mods.md).
+# Per file: already applied (reverse check passes) -> skip; applies cleanly -> apply; else warn loudly
+# and continue. Never forces, 3-way merges or overwrites. Re-run after `hermes update`.
+# HERMES_SKIP_PATCHES=true skips; HERMES_AGENT_DIR points at another checkout (testing).
+HERMES_AGENT_DIR="${HERMES_AGENT_DIR:-$HERMES_HOME/hermes-agent}"
+apply_hermes_patches() {
+  local patch name file applied=0 skipped=0 failed=0
+  if [ "${HERMES_SKIP_PATCHES:-false}" = true ]; then
+    log "skipping Hermes source patches (HERMES_SKIP_PATCHES=true)"
+    return 0
+  fi
+  if ! git -C "$HERMES_AGENT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+    log "WARNING: $HERMES_AGENT_DIR is not a git checkout; Hermes source patches NOT applied"
+    return 0
+  fi
+  for patch in "$REPO_DIR"/patches/*.patch; do
+    [ -f "$patch" ] || continue
+    name="$(basename "$patch")"
+    while IFS= read -r file; do
+      [ -n "$file" ] || continue
+      if git -C "$HERMES_AGENT_DIR" apply --reverse --check --include="$file" "$patch" >/dev/null 2>&1; then
+        skipped=$((skipped + 1))
+      elif git -C "$HERMES_AGENT_DIR" apply --check --include="$file" "$patch" >/dev/null 2>&1; then
+        if git -C "$HERMES_AGENT_DIR" apply --include="$file" "$patch"; then
+          log "applied $name: $file"
+          applied=$((applied + 1))
+        else
+          log "WARNING: $name failed to apply to $file; continuing"
+          failed=$((failed + 1))
+        fi
+      else
+        log "WARNING: !!! $name does NOT apply to $file (upstream drift or conflicting local edit) — resolve by hand; patch skipped for this file"
+        failed=$((failed + 1))
+      fi
+    done < <(git -C "$HERMES_AGENT_DIR" apply --numstat "$patch" 2>/dev/null | awk -F'\t' '{print $3}')
+  done
+  log "Hermes source patches: $applied applied, $skipped already applied, $failed need attention"
+}
+apply_hermes_patches || log "WARNING: Hermes source patch step errored; continuing"
+
+# 3c. hermes-session-reset-policy plugin: config.yaml's session_reset policy does nothing without it.
+if command -v hermes >/dev/null 2>&1; then
+  if COLUMNS=250 hermes plugins list 2>/dev/null | grep -q "hermes-session-reset-policy"; then
+    log "hermes-session-reset-policy plugin already installed"
+  else
+    log "installing hermes-session-reset-policy plugin"
+    hermes plugins install hermes-session-reset-policy --yes-deps --enable \
+      || log "WARNING: hermes-session-reset-policy install failed; session_reset policy inactive"
+  fi
+
+  # 3d. hermes-hygiene weekly cron (storage/health sweep, script-only). Created only if no job has that
+  # name; an existing job (e.g. the remote's Telegram-delivered one) is left alone.
+  if hermes cron list --all 2>/dev/null | grep -Eq "Name:[[:space:]]+hermes-hygiene([[:space:]]|$)"; then
+    log "hermes-hygiene cron already present"
+  elif [ -f "$HERMES_HOME/scripts/hermes-hygiene.py" ] || [ -f "$REPO_DIR/scripts/hermes-hygiene.py" ]; then
+    mkdir -p "$HERMES_HOME/scripts"
+    [ -f "$HERMES_HOME/scripts/hermes-hygiene.py" ] || cp "$REPO_DIR/scripts/hermes-hygiene.py" "$HERMES_HOME/scripts/hermes-hygiene.py"
+    log "creating hermes-hygiene cron (0 4 * * 0, local delivery)"
+    hermes cron create "0 4 * * 0" --name hermes-hygiene --script hermes-hygiene.py --no-agent --deliver local \
+      || log "WARNING: hermes-hygiene cron creation failed"
+  fi
+fi
+
+# 3e. Watchdog scheduler (every 30 min). Install only if absent; never overwrite an existing unit.
+# watchdog.py itself is synced in step 4; its config (scripts/watchdog.json) is host-specific and not managed here.
+if [ "$IS_MAC" = true ]; then
+  WD_PLIST="$HOME/Library/LaunchAgents/ai.hermes.watchdog.plist"
+  if [ -f "$WD_PLIST" ]; then
+    log "watchdog launchd agent already installed"
+  elif [ -f "$REPO_DIR/config/ai.hermes.watchdog.plist" ]; then
+    mkdir -p "$HOME/Library/LaunchAgents" "$HERMES_HOME/logs"
+    sed "s|/Users/ayush|$HOME|g" "$REPO_DIR/config/ai.hermes.watchdog.plist" > "$WD_PLIST"
+    log "installed watchdog launchd agent"
+    launchctl bootstrap "gui/$(id -u)" "$WD_PLIST" 2>/dev/null || log "note: load the watchdog with: launchctl bootstrap gui/$(id -u) $WD_PLIST"
+  fi
+elif command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+  WD_DIR="$HOME/.config/systemd/user"
+  if [ -f "$WD_DIR/hermes-watchdog.timer" ] && [ -f "$WD_DIR/hermes-watchdog.service" ]; then
+    log "watchdog systemd timer already installed"
+  elif [ -f "$REPO_DIR/config/hermes-watchdog.timer" ]; then
+    mkdir -p "$WD_DIR"
+    for u in hermes-watchdog.service hermes-watchdog.timer; do
+      [ -f "$WD_DIR/$u" ] || cp "$REPO_DIR/config/$u" "$WD_DIR/$u"
+    done
+    systemctl --user daemon-reload
+    systemctl --user enable --now hermes-watchdog.timer \
+      && log "installed watchdog systemd timer" \
+      || log "WARNING: could not enable hermes-watchdog.timer"
+  fi
+fi
+
 # 4. Hermes scripts + hooks (copied so watchdog check_script_drift sees exact byte parity)
 log "syncing scripts -> $HERMES_HOME/scripts/"
 COMMON_SCRIPTS=(

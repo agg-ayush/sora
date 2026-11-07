@@ -4,9 +4,14 @@ Local patches applied to the **live `~/.hermes/hermes-agent` clone** that are
 NOT committed/pushed upstream (we don't own that repo — it's a Hermes-managed
 clone of the upstream `hermes-agent` source).
 
-**Re-apply and re-verify after every `hermes update`** — the update flow pulls
-fresh upstream source into `~/.hermes/hermes-agent` and will silently drop any
-of these local edits.
+Each mod lives in `patches/*.patch` (generated with `git diff` from the host
+checkouts). `devbox/setup-hermes.sh` applies them idempotently per file: skip if
+already applied, apply if clean, otherwise print a loud `WARNING` and continue
+(never forces or 3-way merges). `HERMES_SKIP_PATCHES=true` skips the step;
+Claude-only and skills-only modes exit before it.
+
+**After every `hermes update`** (which drops local edits) re-run
+`bash devbox/setup-hermes.sh`, then re-run the tests below.
 
 ## 1. Readonly kanban connect for delegated children
 
@@ -14,20 +19,20 @@ of these local edits.
 
 ## 2. Exclude `local_automation_v1` from `pending_rows` viewer receipts
 
-**Status:** applied + verified 2026-11-03. The `gateway/session_queued_controls.py` change exists on the remote only; the Mac has the `tui_gateway/session_history.py` change.
+**Patch:** `patches/session-bubble-fix.patch` (applied by `setup-hermes.sh`). **Status:** applied + verified 2026-11-03. Before the patch file existed, `gateway/session_queued_controls.py` was on the remote only and `tui_gateway/session_history.py` on both; setup now applies both everywhere.
 
 **Why.** On the canonical gateway (`gateway/session_queued_controls.py`), `pending_rows()` included `local_automation_v1` rows (background process completions, subagent completions, heartbeats) in `session.info.pending`. When those rows transitioned `queued → started`, `ui-tui/src/app/createGatewayEventHandler.ts` (`newlyStartedRows`) painted `started.user` (the full `[IMPORTANT: Background process ...]` or `[ASYNC DELEGATION BATCH COMPLETE ...]` model text) as a live `❯` user chat bubble on screen.
 
 **Files + functions changed:**
 
-- `gateway/session_queued_controls.py` (remote only)
+- `gateway/session_queued_controls.py`
   - `pending_rows(authority, ref)` — filters out `'local_automation_v1' in (row.get('payload') or {})` so internal automation turns are not broadcast as user-queued prompt bubbles.
-- `tui_gateway/session_history.py` (Mac + remote)
+- `tui_gateway/session_history.py`
   - `_legacy_display_kind(role, text)` — recognizes `[IMPORTANT: Background process ` (`process_complete`) and `[ASYNC DELEGATION BATCH COMPLETE` (`async_delegation_complete`) when projecting any untyped row (e.g. a turn interrupted before post-turn stamping).
 
-## 3. Seatbelt Claude Teams OAuth route identity (`seatbelt-claude-teams.patch`)
+## 3. Seatbelt Claude Teams OAuth route identity
 
-**Status:** applied + verified 2026-11-05 on Mac and `sora`.
+**Patch:** `patches/seatbelt-claude-teams.patch` (applied by `setup-hermes.sh`). **Status:** applied + verified 2026-11-05 on Mac and `sora`. Verify: `pytest tests/agent/test_anthropic_route_oauth_identity.py` in the Hermes checkout.
 
 **Why.** Makes Hermes treat `https://<model-gateway>` / `<model-gateway>` (`providers.seatbelt`) as a native Claude Code OAuth route across main chat, thinking retention, and auxiliary calls (`_maybe_wrap_anthropic`), preventing 429s ("Third-party apps now draw from extra usage").
 

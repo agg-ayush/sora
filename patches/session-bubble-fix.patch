@@ -1,0 +1,34 @@
+diff --git a/tui_gateway/session_history.py b/tui_gateway/session_history.py
+index b0227d29c4c..ec730b97ed1 100644
+--- a/tui_gateway/session_history.py
++++ b/tui_gateway/session_history.py
+@@ -269,7 +269,15 @@ def _legacy_display_kind(role: str, text: str) -> str | None:
+ 
+     if failed_turn := untyped_failed_turn_display_kind(role, text):
+         return failed_turn
+-    return "auto_continue" if role == "user" and text.lstrip().startswith(_AUTO_CONTINUE_NOTE_PREFIX) else None
++    if role == "user":
++        stripped = text.lstrip()
++        if stripped.startswith(_AUTO_CONTINUE_NOTE_PREFIX):
++            return "auto_continue"
++        if stripped.startswith("[IMPORTANT: Background process "):
++            return "process_complete"
++        if stripped.startswith("[ASYNC DELEGATION BATCH COMPLETE"):
++            return "async_delegation_complete"
++    return None
+ 
+ 
+ _HISTORY_ASSISTANT_DETAIL_KEYS = (
+diff --git a/gateway/session_queued_controls.py b/gateway/session_queued_controls.py
+index fb6845cc47..25ad8cea4f 100644
+--- a/gateway/session_queued_controls.py
++++ b/gateway/session_queued_controls.py
+@@ -65,7 +65,7 @@ def pending_rows(authority, ref):
+     """The pending rows a viewer is shown, plus each queued admission in transfer to the running
+     claim: listed ``started`` and ``steering``, because it may still go back to its queue place, and a
+     client must not retire an admission it no longer sees. The caller holds the stream lock."""
+-    rows = {row['admission_id']: row for row in authority._pending_rows(ref)}
++    rows = {row['admission_id']: row for row in authority._pending_rows(ref) if 'local_automation_v1' not in (row.get('payload') or {})}
+     entry = authority.steer_transfers.get(ref.session_id)
+     for admission_id in entry[1] if entry is not None else ():
+         row = get_session_admission(authority.db, admission_id=admission_id)

@@ -1,137 +1,537 @@
-# Hermes config template — copy to ~/.hermes/config.yaml and adjust.
-# Secrets (API keys, tokens) go in ~/.hermes/.env, NOT here.
+# Hermes config template — setup-hermes.sh copies this to ~/.hermes/config.yaml ONLY when that file is absent.
+# Regenerated from the live Mac config 2026-11-08. NO secrets here: credentials are environment-variable references; fill ~/.hermes/.env.
 
+# Default route: Claude Teams (Opus 5.5) through the Seatbelt gateway.
 model:
-  # Kimi K3 via Fireworks — multimodal, strong at coding/orchestration.
-  default: accounts/fireworks/models/kimi-k3
-  provider: fireworks
-  reasoning_effort: high
+  base_url: https://<model-gateway>
+  default: claude-teams-group/claude-opus-5-5
   max_tokens: 128000
+  provider: seatbelt
+  api_mode: anthropic_messages
+  reasoning_effort: high
   aliases:
     k3: fireworks/accounts/fireworks/models/kimi-k3
-    glm53: fireworks/accounts/fireworks/models/glm-5p3
     glm53f: fireworks/accounts/fireworks/models/glm-5p3-flash
-
-# Provider config — hermes's own model calls authenticate via TRUEFOUNDRY_API_KEY.
-# (The claude/codex CLI subprocesses use TFY_API_KEY for TF-routed models, or
-# FIREWORKS_API_KEY for kimi-k3 via Fireworks — both exported by the plugin.)
+    glm53: fireworks/accounts/fireworks/models/glm-5p3
+    gpt6sol: truefoundry-gpt6/openai-group/gpt-6-sol
+    gpt56sol: truefoundry/openai-group/gpt-5.6-sol
+    sonnet55: truefoundry/claude-group/claude-sonnet-5-5
+    gpt61sol: truefoundry/openai-group/gpt-6.1-sol
+    argon: truefoundry/gemini-group/gemini-4-argon
+    k3p1: fireworks/accounts/fireworks/models/kimi-k3p1-pro
+    haiku: seatbelt/claude-teams-group/claude-haiku-5-5
+    sonnet: seatbelt/claude-teams-group/claude-sonnet-5-5
+    opus: seatbelt/claude-teams-group/claude-opus-5-5
+    fable: seatbelt/claude-teams-group/claude-fable-5-1
+  context_length: 1000000
+# Provider definitions. Every credential is an environment-variable reference resolved from ~/.hermes/.env
+# (the seatbelt api_key is a non-secret dummy; auth rides the x-tfy-api-key / x-maat-token headers).
 providers:
   truefoundry:
     api: https://<llm-gateway>.truefoundry.cloud/api/llm/api/inference/openai/v1
     api_key: ${TRUEFOUNDRY_API_KEY}
-
+    default_model: gemini-group/gemini-3.1-pro
+    models:
+      claude-group/claude-fable-5:
+        context_length: 1000000
+      claude-group/claude-haiku-4-5:
+        context_length: 200000
+      claude-group/claude-opus-4-8:
+        context_length: 1000000
+      claude-group/claude-sonnet-5:
+        context_length: 1000000
+      claude-opus-4-8:
+        context_length: 1000000
+      claude-sonnet-5:
+        context_length: 1000000
+      fireworks-group/glm-5p2:
+        context_length: 1000000
+      gemini-group/gemini-3.1-pro:
+        context_length: 1048576
+      gemini-group/gemini-3.5-flash:
+        context_length: 1048576
+      openai-group/gpt-5.6-luna:
+        context_length: 1050000
+      openai-group/gpt-5.6-sol:
+        context_length: 1050000
+      openai-group/gpt-5.6-terra:
+        context_length: 1050000
+      claude-group/claude-sonnet-5-5:
+        context_length: 1000000
+      gemini-group/gemini-4-argon:
+        context_length: 1048576
+        api_mode: chat
+      openai-group/gpt-6.1-sol:
+        context_length: 1050000
+    name: TrueFoundry
+    extra_body:
+      reasoning_effort: medium
+  fireworks:
+    models:
+      accounts/fireworks/models/kimi-k3:
+        context_length: 1000000
+      accounts/fireworks/models/kimi-k3p1-pro:
+        context_length: 1048576
+      accounts/fireworks/models/glm-5p3-flash:
+        context_length: 1000000
+      accounts/fireworks/models/glm-5p3:
+        context_length: 1000000
+  truefoundry-gpt6:
+    api: https://<llm-gateway>.truefoundry.cloud/api/llm/api/inference/openai/v1
+    api_key: ${TRUEFOUNDRY_PERSONAL_TOKEN}
+    transport: codex_responses
+    name: TrueFoundry GPT-6
+  seatbelt-codex:
+    name: seatbelt-codex
+    api: https://<model-gateway>/v1
+    api_key: ${TRUEFOUNDRY_PERSONAL_TOKEN}
+    extra_headers:
+      x-maat-token: ${MAAT_API_TOKEN}
+    models:
+      codex-seat-traffic/gpt-6-sol:
+        context_length: 872000
+      codex-seat-traffic/gpt-5.3-codex:
+        context_length: 872000
+      codex-seat-traffic/gpt-5.6-luna:
+        context_length: 872000
+      codex-seat-traffic/gpt-5.6-terra:
+        context_length: 872000
+      codex-seat-traffic/gpt-5.6-sol:
+        context_length: 872000
+      codex-seat-traffic/gpt-6-astra:
+        context_length: 872000
+  seatbelt:
+    name: Seatbelt
+    api: https://<model-gateway>
+    transport: anthropic_messages
+    extra_headers:
+      x-tfy-api-key: ${TRUEFOUNDRY_PERSONAL_TOKEN}
+      x-maat-token: ${MAAT_API_TOKEN}
+    default_model: claude-teams-group/claude-sonnet-5-5
+    api_key: placeholder
+    discover_models: false
+    models:
+      claude-teams-group/claude-haiku-5-5:
+        prompt_caching: true
+        context_length: 1000000
+        supports_reasoning: true
+        supports_tools: true
+        supports_vision: true
+      claude-teams-group/claude-sonnet-5-5:
+        prompt_caching: true
+        context_length: 1000000
+        supports_reasoning: true
+        supports_tools: true
+        supports_vision: true
+      claude-teams-group/claude-opus-5-5:
+        prompt_caching: true
+        context_length: 1000000
+        supports_reasoning: true
+        supports_tools: true
+        supports_vision: true
+      claude-teams-group/claude-fable-5-1:
+        prompt_caching: true
+        context_length: 1000000
+        supports_reasoning: true
+        supports_tools: true
+        supports_vision: true
+# Fallbacks when the primary route fails: Kimi K3.1 Pro (Fireworks), then Gemini 4 Argon (TrueFoundry).
 fallback_providers:
-  - model: fireworks-group/glm-5p2
-    provider: truefoundry
-    reasoning_effort: high
-  - model: claude-opus-4-8
-    provider: truefoundry
-
+- model: accounts/fireworks/models/kimi-k3p1-pro
+  provider: fireworks
+- model: gemini-group/gemini-4-argon
+  provider: truefoundry
 agent:
   max_turns: 200
   verify_on_stop: auto
-
+  image_input_mode: native
+  reasoning_overrides:
+    claude-opus-4-8: high
+    gpt-5.6-luna: none
+    gpt-5.6-sol: none
+    gpt-5.6-terra: none
+  reasoning_effort: high
+  verbose: false
+  personality: 'Concise always — short sentences, no filler, no preamble. In conversation: casual register, slang, profanity fine, emojis fine, a bit of edge — personality shows in small layers (a one-liner aside, a dry jab, an emoji at the end), never in a way that buries the answer or pads length. Dark/NSFW humor is on the table if the moment calls for it. In anything that ships — code, code comments, commit messages, PR titles/descriptions, docs, customer-facing text, changelogs — personality is OFF: professional, precise, zero emojis, zero slang, zero profanity, zero jokes. No exceptions. When in doubt whether something ships, treat it as shipping.'
+terminal:
+  backend: local
+  cwd: .
+  timeout: 600
+  home_mode: auto
+  container_cpu: 1
+  container_memory: 5120
+  container_disk: 51200
+  container_persistent: true
+  docker_mount_cwd_to_workspace: false
+  lifetime_seconds: 1800
+browser:
+  inactivity_timeout: 120
+  allow_private_urls: true
+checkpoints:
+  enabled: true
+context_file_max_chars: 100000
+tool_loop_guardrails:
+  warnings_enabled: true
+  hard_stop_enabled: true
+  warn_after:
+    exact_failure: 2
+    same_tool_failure: 3
+    idempotent_no_progress: 2
+  hard_stop_after:
+    exact_failure: 5
+    same_tool_failure: 8
+    idempotent_no_progress: 5
+compression:
+  enabled: true
+  threshold: 0.7
+  target_ratio: 0.2
+  tail_mode: legacy
+  protect_last_n: 20
+  proactive_prune_tokens: 0
+  protect_first_n: 3
+  codex_gpt55_autoraise: true
+  codex_app_server_auto: native
+  idle_compact_after_seconds: 0
+  threshold_tokens: 500000
+prompt_caching:
+  cache_ttl: 5m
+# Side-task routing. vision = auto with a fallback chain; web_extract/background_review ride Seatbelt Opus.
+auxiliary:
+  vision:
+    provider: auto
+    model: ''
+    fallback_chain:
+    - provider: fireworks
+      model: accounts/fireworks/models/kimi-k3p1-pro
+    - provider: truefoundry
+      model: gemini-group/gemini-4-argon
+  compression:
+    provider: fireworks
+    model: accounts/fireworks/models/glm-5p3-flash
+  title_generation:
+    provider: fireworks
+    model: accounts/fireworks/models/glm-5p3-flash
+  memory_query_rewrite:
+    provider: fireworks
+    model: accounts/fireworks/models/glm-5p3-flash
+  goal_judge:
+    provider: fireworks
+    model: accounts/fireworks/models/glm-5p3-flash
+  curator:
+    provider: fireworks
+    model: accounts/fireworks/models/glm-5p3-flash
+  background_review:
+    provider: seatbelt
+    model: claude-teams-group/claude-opus-5-5
+    fallback_chain:
+    - provider: truefoundry
+      model: gemini-group/gemini-4-argon
+  web_extract:
+    provider: seatbelt
+    model: claude-teams-group/claude-opus-5-5
 display:
-  # TUI is the default; tier sessions MUST use --cli to override this
-  # (the TUI's stdin closes in detached tmux panes).
+  compact: false
+  personality: 'Concise always — short sentences, no filler, no preamble. In conversation: casual register, slang, profanity fine, emojis fine, a bit of edge — personality shows in small layers (a one-liner aside, a dry jab, an emoji at the end), never in a way that buries the answer or pads length. Dark/NSFW humor is on the table if the moment calls for it. In anything that ships — code, code comments, commit messages, PR titles/descriptions, docs, customer-facing text, changelogs — personality is OFF: professional, precise, zero emojis, zero slang, zero profanity, zero jokes. No exceptions. When in doubt whether something ships, treat it as shipping.'
+  busy_input_mode: steer
   interface: tui
-
-# Gateway: Telegram configured (add/remove platforms as needed).
-# Run `hermes gateway setup` to configure platforms interactively.
-
-# Kanban: disable auto-decompose — the tier system triages + dispatches manually
-# (T1 → T2), not via the kanban dispatcher's auto-decompose fan-out. The default
-# (true) causes runaway fan-out (decomposes ready/triage tasks, spawns workers
-# that crash, re-dispatches). Leave it off.
-kanban:
-  auto_decompose: false
-
-# --- Optional tier-orchestration additions (uncomment + adjust) --------------
-
-# Auxiliary model pinning — route cheap background tasks to claude-haiku-4-5 via
-# the TrueFoundry gateway instead of burning the default (kimi-k3) model on them.
-#auxiliary:
-#  compression:
-#    model: claude-group/claude-haiku-4-5
-#    provider: truefoundry
-#  title_generation:
-#    model: claude-group/claude-haiku-4-5
-#    provider: truefoundry
-#  curator:
-#    model: claude-group/claude-haiku-4-5
-#    provider: truefoundry
-#  goal_judge:
-#    model: claude-group/claude-haiku-4-5
-#    provider: truefoundry
-#  memory_query_rewrite:
-#    model: claude-group/claude-haiku-4-5
-#    provider: truefoundry
-#  background_review:
-#    provider: custom
-#    model: claude-group/claude-sonnet-5
-#    base_url: https://<llm-gateway>.truefoundry.cloud/api/llm/api/inference/openai/v1
-#    api_key: ${TRUEFOUNDRY_API_KEY}
-
-# Compression knobs — proactive pruning + idle auto-compact so long tier
-# sessions don't hit the context wall.
-#compression:
-#  enabled: true
-#  threshold: 0.9
-#  target_ratio: 0.2
-#  tail_mode: legacy
-#  protect_last_n: 20
-#  proactive_prune_tokens: 48000        # prune tool output early, before threshold
-#  idle_compact_after_seconds: 1800     # auto-compact after 30min idle
-
-# Hooks — Hermes hooks live in ~/.hermes/agent-hooks/ (NOT ~/.hermes/scripts/).
-# subagent_stop fires after every delegate_task child finishes; the ledger hook
-# appends the outcome to ~/.hermes/tier_orchestrator/subagent_ledger.jsonl.
-# Scripts live in this repo under scripts/; symlink them into ~/.hermes/agent-hooks/
-# (devbox/setup-hermes.sh wires the symlinks). Available hooks:
-#   scripts/subagent-ledger-hook.py   → subagent_stop → delegation ledger
-#   scripts/aws-token-refresh-hook.sh → post_tool_call → auto saml2aws refresh on expired AWS token
-#hooks:
-#  post_tool_call:
-#    - command: ~/.hermes/agent-hooks/aws-token-refresh.sh
-#      matcher: ^terminal$
-#      timeout: 10
-#  subagent_stop:
-#    - command: ~/.hermes/agent-hooks/subagent-ledger.py
-#      timeout: 5
-
-# Delegation: subagents auto-approve their tool actions (no silent auto-deny
-# stalls). Subagents can't ask for approval — without this they look "stuck"
-# when a tool needs it. Tier safeguards (deny-guard on T3, no-commit-to-main
-# hooks) still bind them.
+  bell_on_complete: true
+  show_reasoning: true
+  background_process_notifications: concise
+  streaming: true
+  skin: claude-code
+  interim_assistant_messages: true
+  pet:
+    enabled: false
+    slug: prompt-penguin
+    render_mode: iterm
+    scale: 0.33
+  busy_ack_detail: true
+  cleanup_progress: false
+  long_running_notifications: true
+  tool_progress: new
+  tui_compact: true
+  sections:
+    thinking: collapsed
+    subagents: hidden
+    activity: expanded
+    tools: collapsed
+  details_mode: hidden
+dashboard:
+  theme: mono
+  font: system-sans
+stt:
+  enabled: true
+  local:
+    model: large-v3
+  openai:
+    model: whisper-1
+voice:
+  auto_tts: false
+memory:
+  memory_enabled: true
+  user_profile_enabled: true
+  memory_char_limit: 15000
+  user_char_limit: 10000
+  nudge_interval: 10
+  flush_min_turns: 6
+  provider: synapse-mem
+# Subagents: Seatbelt Sonnet 5.5. subagent_auto_approve avoids silent approval stalls; tier safeguards still bind them.
 delegation:
-  model: accounts/fireworks/models/kimi-k3
-  provider: fireworks
+  model: claude-teams-group/claude-sonnet-5-5
+  provider: seatbelt
+  base_url: ''
+  api_key: ''
+  max_iterations: 250
+  child_timeout_seconds: 1800
+  reasoning_effort: high
   max_concurrent_children: 5
   max_spawn_depth: 4
-  child_timeout_seconds: 1800
   subagent_auto_approve: true
-
-# MCP servers — skeleton only; tokens live in ~/.hermes/.env and are NOT
-# committed here.
-#mcp_servers:
-#  supabase:
-#    url: https://mcp.supabase.com/mcp
-#    enabled: true
-#  ticoons:
-#    url: https://<internal-host>/api/v1/mcp
-#    enabled: true
-#  recall:
-#    url: https://ap-northeast-1.recall.ai/mcp
-#    enabled: true
-#  vercel:
-#    url: https://mcp.vercel.com
-#    enabled: true
-#  aws-knowledge:
-#    url: https://knowledge-mcp.global.api.aws
-#    enabled: true
-#  deepwiki:
-#    url: https://mcp.deepwiki.com/mcp
-#    enabled: true
-#  context7:
-#    url: https://mcp.context7.com/mcp
-#    enabled: true
+skills:
+  creation_nudge_interval: 15
+  disabled:
+  - airtable
+  - apple-notes
+  - apple-reminders
+  - arxiv
+  - ascii-art
+  - ascii-video
+  - audiocraft-audio-generation
+  - baoyu-infographic
+  - blogwatcher
+  - excalidraw
+  - gif-search
+  - heartmula
+  - huggingface-hub
+  - imessage
+  - llama-cpp
+  - manim-video
+  - maps
+  - obsidian
+  - opencode
+  - openhue
+  - p5js
+  - polymarket
+  - songsee
+  - songwriting-and-ai-music
+  - teams-meeting-pipeline
+  - touchdesigner-mcp
+  - youtube-content
+  - yuanbao
+  - evaluating-llms-harness
+  - serving-llms-vllm
+  - weights-and-biases
+  - segment-anything-model
+  - jupyter-live-kernel
+  - llm-wiki
+  - research-paper-writing
+  - pretext
+  - comfyui
+  - design-md
+  - himalaya
+  - simplify-code
+  - pptx-measured-design
+  - petdex
+curator:
+  consolidate: true
+approvals:
+  mode: 'off'
+  timeout: 120
+# claude-orchestrate, synapse-mem and hermes-session-reset-policy are installed by setup-hermes.sh.
+plugins:
+  disabled:
+  - claude-code-identity
+  enabled:
+  - claude-orchestrate
+  - disk-cleanup
+  - hermes-session-reset-policy
+  - image_gen/openai
+  - security-guidance
+  - spotify
+  - superpowers
+  - synapse-mem
+  - web-parallel
+  entries:
+    claude-orchestrate:
+      allow_tool_override: false
+  scan_on_install: true
+# Hook scripts live in ~/.hermes/agent-hooks/ (devbox/setup-hermes.sh copies them there).
+hooks:
+  post_tool_call:
+  - command: ~/.hermes/agent-hooks/aws-token-refresh.sh
+    matcher: ^terminal$
+    timeout: 10
+  subagent_stop:
+  - command: ~/.hermes/agent-hooks/subagent-ledger.py
+    timeout: 5
+security:
+  allow_private_urls: true
+# auto_decompose stays off: the tier system triages + dispatches manually (T1 -> T2); the default causes runaway fan-out.
+kanban:
+  auto_decompose: false
+code_execution:
+  max_tool_calls: 50
+  timeout: 300
+streaming:
+  enabled: true
+sessions:
+  auto_archive: true
+  auto_archive_days: 45
+  max_resume_messages: 0
+  auto_prune: true
+  retention_days: 30
+updates:
+  pre_update_backup: quick
+  backup_keep: 5
+  non_interactive_local_changes: stash
+# MCP servers. Tokens come from ~/.hermes/.env via environment-variable references.
+mcp_servers:
+  supabase:
+    enabled: true
+    headers:
+      Authorization: ${SUPABASE_MCP_AUTHORIZATION}
+    url: https://mcp.supabase.com/mcp
+  ticoons:
+    url: https://<internal-host>/api/v1/mcp
+    headers:
+      Authorization: ${TICOONS_MCP_AUTHORIZATION}
+    enabled: true
+  recall:
+    url: https://ap-northeast-1.recall.ai/mcp
+    headers:
+      Authorization: ${RECALL_MCP_AUTHORIZATION}
+  vercel:
+    url: https://mcp.vercel.com
+    auth: oauth
+    enabled: false
+  aws-knowledge:
+    url: https://knowledge-mcp.global.api.aws
+    enabled: true
+    tools:
+      exclude:
+      - aws___retrieve_skill
+  deepwiki:
+    url: https://mcp.deepwiki.com/mcp
+    enabled: true
+  context7:
+    url: https://mcp.context7.com/mcp
+    enabled: true
+  serena:
+    command: uvx
+    args:
+    - --from
+    - git+https://github.com/oraios/serena
+    - serena
+    - start-mcp-server
+    - --context
+    - ide
+    - --project-from-cwd
+    - --enable-web-dashboard
+    - 'False'
+    - --open-web-dashboard
+    - 'False'
+    enabled: true
+  read-ai:
+    url: https://api.read.ai/mcp
+    auth: oauth
+    enabled: true
+platform_toolsets:
+  cli:
+  - browser
+  - clarify
+  - code_execution
+  - computer_use
+  - connections
+  - cronjob
+  - delegation
+  - file
+  - image_gen
+  - kanban
+  - memory
+  - session_search
+  - skills
+  - spotify
+  - terminal
+  - todo
+  - tts
+  - vision
+  - web
+  discord:
+  - connections
+  - hermes-discord
+  - spotify
+  homeassistant:
+  - connections
+  - hermes-homeassistant
+  - spotify
+  qqbot:
+  - connections
+  - hermes-qqbot
+  - spotify
+  signal:
+  - connections
+  - hermes-signal
+  - spotify
+  slack:
+  - connections
+  - hermes-slack
+  - spotify
+  teams:
+  - connections
+  - hermes-teams
+  - spotify
+  telegram:
+  - connections
+  - hermes-telegram
+  - spotify
+  whatsapp:
+  - connections
+  - hermes-whatsapp
+  - spotify
+  yuanbao:
+  - connections
+  - hermes-yuanbao
+  - spotify
+# Idle reset after 7 days. Needs the hermes-session-reset-policy plugin (installed by setup-hermes.sh).
+session_reset:
+  at_hour: 4
+  idle_minutes: 10080
+  mode: idle
+# Per-model capability overrides (Seatbelt Claude models, Kimi K3.1 Pro vision).
+model_overrides:
+  truefoundry-gpt6:
+    openai-group/gpt-6-sol:
+      context_window: 1050000
+      supports_tools: true
+      supports_reasoning: true
+  truefoundry:
+    openai-group/gpt-5.6-sol:
+      context_window: 1050000
+  seatbelt:
+    claude-teams-group/claude-haiku-5-5:
+      context_window: 1000000
+      supports_reasoning: true
+      supports_tools: true
+      supports_vision: true
+      model_family: claude-haiku
+    claude-teams-group/claude-sonnet-5-5:
+      context_window: 1000000
+      supports_reasoning: true
+      supports_tools: true
+      supports_vision: true
+      model_family: claude-sonnet
+    claude-teams-group/claude-opus-5-5:
+      context_window: 1000000
+      supports_reasoning: true
+      supports_tools: true
+      supports_vision: true
+      model_family: claude-opus
+    claude-teams-group/claude-fable-5-1:
+      context_window: 1000000
+      supports_reasoning: true
+      supports_tools: true
+      supports_vision: true
+      model_family: claude-fable
+  fireworks:
+    accounts/fireworks/models/kimi-k3p1-pro:
+      supports_vision: true
