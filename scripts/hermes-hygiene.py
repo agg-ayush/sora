@@ -19,6 +19,7 @@ Thresholds are deliberately conservative — this deletes derived artifacts
 """
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -162,6 +163,90 @@ def checkpoint_wal() -> str | None:
     return f"state.db WAL: {before:.0f} MB -> {after:.1f} MB (checkpointed)"
 
 
+STALE_DAYS = 7
+HOME = Path.home()
+# (directory, whether only entries owned by this user may be removed)
+STALE_ROOTS: list[tuple[Path, bool]] = [
+    (HOME / ".hermes" / "cache" / "scratch", False),
+    (HOME / ".config" / "gogcli" / "drive-downloads", False),
+    (HOME / ".npm" / "_npx", False),
+    (Path("/tmp"), True),
+]
+# /tmp entries that belong to running services, never removed
+TMP_KEEP_PREFIXES = ("tmux-", "systemd-", "snap-private", ".X", ".ICE", ".font-unix", "ssh-")
+
+
+def _newest_mtime(path: Path) -> float:
+    """Most recent mtime anywhere under path, symlinks not followed."""
+    try:
+        newest = path.lstat().st_mtime
+    except OSError:
+        return time.time()
+    if path.is_dir() and not path.is_symlink():
+        for dirpath, dirnames, filenames in os.walk(path, followlinks=False):
+            for name in dirnames + filenames:
+                try:
+                    newest = max(newest, os.lstat(os.path.join(dirpath, name)).st_mtime)
+                except OSError:
+                    pass
+    return newest
+
+
+def _entry_size(path: Path) -> int:
+    if path.is_symlink() or not path.is_dir():
+        try:
+            return path.lstat().st_size
+        except OSError:
+            return 0
+    total = 0
+    for dirpath, _dirs, filenames in os.walk(path, followlinks=False):
+        for name in filenames:
+            try:
+                total += os.lstat(os.path.join(dirpath, name)).st_size
+            except OSError:
+                pass
+    return total
+
+
+def prune_stale_files(roots: list[tuple[Path, bool]] | None = None, days: int = STALE_DAYS,
+                      now: float | None = None, dry_run: bool = False) -> str | None:
+    """Remove cache/temp entries with nothing inside modified in the last *days* days."""
+    cutoff = (now or time.time()) - days * 86400
+    uid = os.getuid()
+    freed, removed = 0, 0
+    for root, own_only in (STALE_ROOTS if roots is None else roots):
+        if not root.is_dir():
+            continue
+        for entry in root.iterdir():
+            if root == Path("/tmp") and entry.name.startswith(TMP_KEEP_PREFIXES):
+                continue
+            try:
+                if own_only and entry.lstat().st_uid != uid:
+                    continue
+            except OSError:
+                continue
+            if _newest_mtime(entry) >= cutoff:
+                continue
+            size = _entry_size(entry)
+            if dry_run:
+                print(f"would remove {size / (1024 * 1024):8.1f} MB  {entry}")
+                freed += size
+                removed += 1
+                continue
+            try:
+                if entry.is_dir() and not entry.is_symlink():
+                    shutil.rmtree(entry)
+                else:
+                    entry.unlink()
+            except OSError:
+                continue
+            freed += size
+            removed += 1
+    if not removed:
+        return None
+    return f"stale caches/tmp: removed {removed} entries older than {days} days ({freed / (1024 * 1024):.0f} MB)"
+
+
 def doctor_issues() -> str | None:
     """Report doctor's failures/warnings, filtered to only actionable items."""
     r = hermes("doctor", "--fix", timeout=300)
@@ -186,6 +271,7 @@ def main() -> int:
             prune_archived_messages(),
             optimize_sessions(),
             checkpoint_wal(),
+            prune_stale_files(),
             doctor_issues(),
         ) if ln
     ]
