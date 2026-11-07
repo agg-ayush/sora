@@ -1,5 +1,5 @@
 {
   "expect": ["orphan-reaper", "hermes-hygiene", "auth-canary", "dead-supervisor-alert"],
-  "channel": "telegram:<chat-id>",
+  "channel": "telegram",
   "notify": true
 }

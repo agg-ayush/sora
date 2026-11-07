@@ -1,0 +1,16 @@
+# requires: %h/.hermes/scripts/ti-concern-watcher-loop.sh
+[Unit]
+Description=TI assessment concern watcher (concerns, trouble exits, media-gate expiries -> Telegram group)
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/bin/bash %h/.hermes/scripts/ti-concern-watcher-loop.sh
+Restart=always
+RestartSec=30
+# TI_CONCERN_TELEGRAM_CHAT (group chat id) lives in ~/.hermes/.env; unset -> alerts go to the Telegram home channel.
+EnvironmentFile=-%h/.hermes/.env
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,14 @@
+# requires: %h/.local/bin/hermes
+[Unit]
+Description=Hermes Agent Dashboard
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/hermes dashboard --port 9120 --host 127.0.0.1 --no-open
+Restart=always
+RestartSec=10
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,14 @@
+# REFERENCE ONLY (not installed by setup): disabled on sora, and /tmp/start-wrapper-145.sh no longer exists.
+# Belonged to a finished ti-hiring wrapper-145 dev-server task.
+[Unit]
+Description=ti-hiring wrapper dev server
+
+[Service]
+ExecStart=/tmp/start-wrapper-145.sh
+Restart=always
+RestartSec=5
+StandardOutput=append:/tmp/wrapper-145.log
+StandardError=append:/tmp/wrapper-145.log
+
+[Install]
+WantedBy=default.target

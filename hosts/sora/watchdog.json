@@ -1,0 +1,15 @@
+{
+  "expect": [
+    "orphan-reaper",
+    "hermes-hygiene",
+    "auth-canary"
+  ],
+  "channel": "telegram",
+  "notify": true,
+  "ignore_platforms": [
+    "whatsapp"
+  ],
+  "drift_exclude": [
+    "aws-creds-refresh.sh"
+  ]
+}

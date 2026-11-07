@@ -1,0 +1,14 @@
+# requires: /usr/bin/wezterm-mux-server
+[Unit]
+Description=WezTerm Mux Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/wezterm-mux-server
+Restart=always
+RestartSec=5
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target

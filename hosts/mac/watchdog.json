@@ -1,0 +1,13 @@
+{
+  "expect": [
+    "orphan-reaper",
+    "hermes-hygiene",
+    "auth-canary"
+  ],
+  "channel": "ssh:devbox:telegram",
+  "notify": true,
+  "ignore_platforms": [
+    "telegram",
+    "whatsapp"
+  ]
+}

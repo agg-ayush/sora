@@ -1,0 +1,45 @@
+# Applied by setup-hermes.sh ONLY when config.yaml was created from the template in the same run
+# (deep-merged: dicts merge, lists/scalars replace). Never applied to an existing live config.
+agent:
+  max_turns: 300
+kanban:
+  max_in_progress: 8
+display:
+  battery: true
+  mouse: buttons
+  mouse_tracking: buttons
+  tui_status_indicator: unicode
+  sections:
+    thinking: hidden
+    tools: expanded
+# sora is the Telegram host: it owns the bot token and home channel (ids come from ~/.hermes/.env).
+platforms:
+  telegram:
+    enabled: true
+    home_channel:
+      platform: telegram
+      chat_id: ${TELEGRAM_HOME_CHANNEL}
+      name: Ayush Aggarwal
+      user_id: ${TELEGRAM_HOME_CHANNEL}
+plugins:
+  disabled:
+  - homeassistant
+  enabled:
+  - claude-orchestrate
+  - disk-cleanup
+  - hermes-session-reset-policy
+  - image_gen/openai
+  - platforms/telegram
+  - security-guidance
+  - spotify
+  - superpowers
+  - synapse-mem
+  - web-parallel
+# Written by Hermes for the homeassistant plugin; kept so the live toolset map is reproducible.
+known_plugin_toolsets:
+  cli:
+  - homeassistant
+  acp:
+  - homeassistant
+  webhook:
+  - homeassistant

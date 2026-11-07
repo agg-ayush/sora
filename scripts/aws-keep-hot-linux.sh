@@ -12,7 +12,8 @@ if out=$(bash ~/.hermes/scripts/aws-creds-refresh-linux.sh 2>/dev/null); then
   exit 0
 fi
 MSG="sora: AWS creds refresh FAILED (devflows/eswlegal saml2aws login broken). Check /tmp/aws-creds-refresh.log on the box"
-curl -s -X POST "https://api.telegram.org/bot$(grep ^TELEGRAM_BOT_TOKEN ~/.hermes/.env | cut -d= -f2)/sendMessage" \
-  -d chat_id=<chat-id> --data-urlencode "text=$MSG" >/dev/null 2>&1 || true
+# Chat id = the Telegram home channel from ~/.hermes/.env (never hardcoded in the repo).
+curl -s -X POST "https://api.telegram.org/bot$(grep ^TELEGRAM_BOT_TOKEN= ~/.hermes/.env | cut -d= -f2)/sendMessage" \
+  -d chat_id="$(grep ^TELEGRAM_HOME_CHANNEL= ~/.hermes/.env | cut -d= -f2)" --data-urlencode "text=$MSG" >/dev/null 2>&1 || true
 log "keep-hot: refresh FAILED - alert sent"
 exit 1

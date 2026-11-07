@@ -13,6 +13,7 @@ scripts/    orphan-reaper.py (self-healing watchdog) + hermes-hygiene.py (weekly
 docs/       hermes-tiers-reference.md (canonical architecture) + audit.md
 config/     config.yaml.template (current routing, regenerated from the live Mac config), env.template, zshrc-snippet.sh, watchdog launchd/systemd units (NO secrets)
 patches/    local Hermes source patches applied by setup-hermes.sh
+hosts/      per-host profiles (mac, sora): host-only scripts, systemd/launchd units, cron-jobs.json, watchdog.json, plugins.txt, config-overrides.yaml
 ```
 
 ## Install / Sync (Mac or Ubuntu EC2 `sora`)
@@ -31,6 +32,27 @@ What `devbox/setup-hermes.sh` sets up:
 4. **Scripts & hooks:** Copies repo scripts into `~/.hermes/scripts/` (matching host variant `aws-creds-refresh.sh` on Mac vs `aws-creds-refresh-linux.sh` on Linux so `watchdog.py` sees zero script drift) and hooks into `~/.hermes/agent-hooks/`.
 5. **Claude Code seatbelt sync:** Symlinks `~/.hermes/claude-seatbelt-config/{CLAUDE.md,skills,plugins}` → `~/.claude/`, copies the `state-transition-reviewer` specialist into `pr-review-toolkit`, and enables all installed plugins in seatbelt's `settings.json`.
 6. **Global gitignore:** Adds `.serena/`, `.ui-flow/`, and `**/.claude/settings.local.json`.
+
+## Host profiles (`hosts/<mac|sora>/`)
+
+Everything that exists on only one machine lives in a profile; `setup-hermes.sh` (step 9, `devbox/host-profile.sh`)
+installs it **only when absent** — it never overwrites, restarts, enables or disables anything that exists.
+
+| Item | Where | Installed when |
+|---|---|---|
+| host-only scripts | `scripts/` -> `~/.hermes/scripts/` (real copies) | file missing |
+| helper binaries | `bin/` -> `~/.local/bin/` | file missing |
+| systemd / launchd units | `systemd/`, `launchd/` (`reference/` = not installed) | unit file missing; only newly installed units are enabled/started. A leading `# requires: <path>` line gates a unit on that path. |
+| cron jobs | `cron-jobs.json` | no job with that name (recorded enabled/paused state kept) |
+| plugins | `plugins.txt` (`name [identifier]`) | missing from `hermes plugins list` |
+| `watchdog.json` | profile root | missing |
+| config keys | `config-overrides.yaml` | only when `config.yaml` was created from the template in the same run |
+| gateway service | not copied; `hermes gateway install --if-missing` | no gateway service installed (never on a Mac that has a Telegram token) |
+
+Profile = `mac` on Darwin, `sora` on Linux; override with `HERMES_HOST_PROFILE=<name>`; skip with `HERMES_SKIP_HOST_PROFILE=true`.
+No chat ids or secrets are stored: scripts read `TELEGRAM_HOME_CHANNEL` / `TI_CONCERN_TELEGRAM_CHAT` / `TI_HIRING_TRACKER_DOC_ID`
+from `~/.hermes/.env` (names in `config/env.template`). Repo copies of sora scripts are parameterized, so they differ from the live
+files only in hardcoded paths, chat ids and the tracker doc id. `tests/test_host_profiles.py` enforces this.
 
 ## Usage
 

@@ -370,8 +370,10 @@ for pat in "**/.claude/settings.local.json" ".serena/" ".ui-flow/" ".graphify/" 
 done
 
 # 8. Config templates — copy only if absent (never clobber live config/secrets)
+FRESH_CONFIG=false
 if [ ! -f "$HERMES_HOME/config.yaml" ]; then
   cp "$REPO_DIR/config/config.yaml.template" "$HERMES_HOME/config.yaml"
+  FRESH_CONFIG=true
   log "copied config.yaml.template -> $HERMES_HOME/config.yaml"
 fi
 if [ ! -f "$HERMES_HOME/.env" ]; then
@@ -379,5 +381,12 @@ if [ ! -f "$HERMES_HOME/.env" ]; then
   chmod 600 "$HERMES_HOME/.env"
   log "copied env.template -> $HERMES_HOME/.env (fill in secrets)"
 fi
+
+# 9. Host profile (hosts/<mac|sora>/): host-only scripts, units, cron jobs, plugins, watchdog.json and, only
+# when config.yaml was freshly created above, per-host config overrides. Install-if-absent only; see
+# devbox/host-profile.sh. Skipped in the Claude-only/skills-only modes (they exit earlier) and with
+# HERMES_SKIP_HOST_PROFILE=true. HERMES_HOST_PROFILE=<name> overrides the mac/sora auto-selection.
+REPO_DIR="$REPO_DIR" HERMES_HOME="$HERMES_HOME" FRESH_CONFIG="$FRESH_CONFIG" \
+  bash "$REPO_DIR/devbox/host-profile.sh" || log "WARNING: host profile step failed; continuing"
 
 log "done — setup and sideloaded tools verified."

@@ -1,0 +1,11 @@
+# Applied by setup-hermes.sh ONLY when config.yaml was created from the template in the same run
+# (deep-merged: dicts merge, lists/scalars replace). Never applied to an existing live config.
+agent:
+  max_turns: 200
+# STANDING RULE: the Mac never polls the Telegram bot (sora owns it; Mac alerts relay via
+# `ssh:devbox:telegram` in watchdog.json). Keep the Telegram platform plugin disabled here and
+# never add a platforms.telegram block or TELEGRAM_BOT_TOKEN to the Mac.
+plugins:
+  disabled:
+  - claude-code-identity
+  - platforms/telegram

@@ -1,0 +1,6 @@
+# Plugins that must be installed + enabled on the Mac: "<name> [<install identifier>]".
+# setup-hermes.sh installs a plugin (hermes plugins install <identifier> --yes-deps --enable) only when
+# it is absent from `hermes plugins list`; installed plugins are never touched.
+# claude-orchestrate, hermes-session-reset-policy and synapse-mem are wired by their own setup steps.
+spotify
+superpowers obra/superpowers

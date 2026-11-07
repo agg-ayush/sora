@@ -1,0 +1,31 @@
+{
+  "_comment": "Sanitized definitions of the live Hermes cron jobs on the Mac (no runtime state). Created only if absent. The Mac never polls Telegram: deliver stays 'local'.",
+  "host": "mac",
+  "jobs": [
+    {
+      "name": "orphan-reaper",
+      "schedule": "*/30 * * * *",
+      "script": "orphan-reaper.py",
+      "no_agent": true,
+      "prompt": "Silent watchdog: reap idle/orphaned tier tmux sessions and release stuck Paperclip checkouts. Output only when it acts.",
+      "deliver": "local",
+      "enabled": true
+    },
+    {
+      "name": "hermes-hygiene",
+      "schedule": "0 4 * * 0",
+      "script": "hermes-hygiene.py",
+      "no_agent": true,
+      "deliver": "local",
+      "enabled": true
+    },
+    {
+      "name": "auth-canary",
+      "schedule": "every 15m",
+      "script": "auth-canary-relay.py",
+      "no_agent": true,
+      "deliver": "local",
+      "enabled": true
+    }
+  ]
+}

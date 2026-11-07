@@ -1,0 +1,83 @@
+{
+  "_comment": "Sanitized definitions of the live Hermes cron jobs on sora (no runtime state). setup-hermes.sh creates a job only if no job with that name exists, honoring 'enabled'. $HOME in workdir expands at install. deliver 'telegram' = platform home channel.",
+  "host": "sora",
+  "jobs": [
+    {
+      "name": "orphan-reaper",
+      "schedule": "*/30 * * * *",
+      "script": "orphan-reaper.py",
+      "no_agent": true,
+      "prompt": "Silent watchdog: reap idle/orphaned tier tmux sessions and release stuck Paperclip checkouts. Output only when it acts.",
+      "deliver": "local",
+      "enabled": true
+    },
+    {
+      "name": "hermes-hygiene",
+      "schedule": "0 4 * * 0",
+      "script": "hermes-hygiene.py",
+      "no_agent": true,
+      "prompt": "Weekly Hermes storage + health hygiene: prune worktree checkpoints, VACUUM state.db when it grows past 750MB, and report doctor warnings. Silent when there's nothing to reclaim and doctor is clean.",
+      "deliver": "telegram",
+      "enabled": true
+    },
+    {
+      "name": "auth-canary",
+      "schedule": "every 15m",
+      "script": "auth-canary.py",
+      "no_agent": true,
+      "deliver": "telegram",
+      "enabled": true
+    },
+    {
+      "name": "sora-aws-keep-hot",
+      "schedule": "0 * * * *",
+      "script": "aws-keep-hot-linux.sh",
+      "no_agent": true,
+      "prompt": "AWS creds keep-hot",
+      "deliver": "local",
+      "enabled": true
+    },
+    {
+      "name": "sora-host-liveness",
+      "schedule": "0 */2 * * *",
+      "script": "host-liveness-sweep.sh",
+      "no_agent": true,
+      "prompt": "Sora host liveness sweep",
+      "deliver": "telegram",
+      "enabled": true
+    },
+    {
+      "name": "patna-eval-watch",
+      "schedule": "every 10m",
+      "script": "patna-eval-watch.sh",
+      "no_agent": true,
+      "prompt": "Patna eval watchdog fired. Read the signal and act: if EVAL-WORKER-GONE (the local transcript-eval worker died with sessions remaining), check the kanban card t_cddf4aa7 and the worker, and restart/resume the local Patna eval run so it isn't stuck; if MEM-LOW, note the box is under memory pressure. Keep it running to completion — operator is AFK and nothing should stay blocked. Report what you found and did.",
+      "deliver": "origin",
+      "enabled": true
+    },
+    {
+      "name": "ti-hiring-watcher-monitor",
+      "schedule": "every 5m",
+      "script": "react-monitor.py",
+      "no_agent": true,
+      "prompt": "Watcher liveness monitor.",
+      "deliver": "origin",
+      "enabled": false
+    },
+    {
+      "name": "ti-hiring-live-doc-subtasks",
+      "schedule": "every 15m",
+      "no_agent": false,
+      "prompt": "Update only the existing Google Doc's Live subtasks tab from authoritative Kanban and GitHub state. This is a quiet local-only maintenance job, not a chat report. Doc ID $TI_HIRING_TRACKER_DOC_ID, exact tab ID t.uvst00rz6jvj, account ayushaggarwal018@gmail.com, board ti-hiring, repo <org>/ti-hiring. Never touch the Architecture and retry paths tab. Never use docs write --replace, docs clear, docs delete, docs share or any full-tab rewrite. Never post to GitHub issues or PRs, especially issue #404, and never print/inspect secret values. In your terminal session first silently export credentials needed by gog with `set -a; source $HOME/.hermes/.env; set +a` (do not echo env); the TUI-free keyring needs GOG_KEYRING_PASSWORD already in that chmod-600 env file. Verify `gog --account ayushaggarwal018@gmail.com docs list-tabs DOC -j` still maps t.uvst00rz6jvj to Live subtasks, then read `gog docs cat DOC --tab t.uvst00rz6jvj` and `gog docs comments list DOC --tab t.uvst00rz6jvj --all --include-resolved --locate -j`. Read `hermes kanban --board ti-hiring list --json`; for every unique `[CARD:t_<8hex>:STATUS]` marker in that tab set STATUS to the task's UPPERCASE actual status (if absent from unarchived list, confirm with `hermes kanban --board ti-hiring show ID --json` before assigning ARCHIVED). Read `gh pr view 390/395/403 --repo <org>/ti-hiring --json state,isDraft`; map OPEN+isDraft to DRAFT, OPEN otherwise OPEN, merged to MERGED, closed to CLOSED and update each unique `[PR:N:STATUS]`. Read `gh issue view 404 --repo <org>/ti-hiring --json state` and update `[ISSUE:404:STATUS]` only. Do not infer DONE from tests, a PR that is merely CLEAN, comments or agent self-reports. If there are NO comments located in Live subtasks, for each changed marker use `gog docs find-replace DOC OLD NEW --tab t.uvst00rz6jvj --match-case -j`; require `replacements==1`, stop on zero/multiple and read back that exact tab. If ANY comments are located there or their location is uncertain, do not replace any text: append one timestamped line per changed card/PR/issue with `gog docs write DOC --tab t.uvst00rz6jvj --append --text '...\\n' -j`, deduping against existing appended lines. This preserves comment anchors and manual text. Newly created nonterminal ti-hiring cards after 2026-09-29T04:51:00Z may be appended as ID/title/status, never full-replace existing content; ignore already-completed historical cards and scheduled predecessor bookkeeping. After all successful status updates, refresh the single `[CHECKED:timestamp]` marker by exact targeted find-replace when no Live tab comments; with comments append a timestamped 'Checked at' line instead. Always re-read exact Live subtasks tab and verify every changed marker or appended delta and the freshness timestamp. If any command fails, report failure locally and leave the old timestamp rather than claiming live refresh. Output one short local line with count of changed statuses and checked UTC time; send no message to the user.",
+      "deliver": "local",
+      "enabled": false,
+      "skills": [
+        "gog-cli"
+      ],
+      "workdir": "$HOME/ti-hiring",
+      "enabled_toolsets": [
+        "terminal"
+      ]
+    }
+  ]
+}
