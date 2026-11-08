@@ -50,7 +50,7 @@ installs it **only when absent** — it never overwrites, restarts, enables or d
 | gateway service | not copied; `hermes gateway install --if-missing` | no gateway service installed (never on a Mac that has a Telegram token) |
 
 Profile = `mac` on Darwin, `sora` on Linux; override with `HERMES_HOST_PROFILE=<name>`; skip with `HERMES_SKIP_HOST_PROFILE=true`.
-No chat ids or secrets are stored: scripts read `TELEGRAM_HOME_CHANNEL` / `TI_CONCERN_TELEGRAM_CHAT` / `TI_HIRING_TRACKER_DOC_ID`
+No chat ids or secrets are stored: scripts read `TELEGRAM_HOME_CHANNEL` / `TI_CONCERN_TELEGRAM_CHAT`
 from `~/.hermes/.env` (names in `config/env.template`). Repo copies of sora scripts are parameterized, so they differ from the live
 files only in hardcoded paths, chat ids and the tracker doc id. `tests/test_host_profiles.py` enforces this.
 

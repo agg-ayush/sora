@@ -98,7 +98,7 @@ class HostProfileTest(unittest.TestCase):
         for line in env.splitlines():
             if re.match(r"^\w*(KEY|TOKEN|AUTHORIZATION|SECRET|PASSWORD|CHAT|CHANNEL)\w*=.+", line):
                 self.fail(f"env.template must hold names only: {line.split('=')[0]}")
-        for name in ("TI_CONCERN_TELEGRAM_CHAT", "TELEGRAM_HOME_CHANNEL", "GOG_KEYRING_PASSWORD", "TI_HIRING_TRACKER_DOC_ID",
+        for name in ("TI_CONCERN_TELEGRAM_CHAT", "TELEGRAM_HOME_CHANNEL", "GOG_KEYRING_PASSWORD",
                      "GITHUB_TOKEN", "NOTION_API_KEY", "PARALLEL_API_KEY", "RECALL_API_KEY", "SDE_SCREENING_GOOGLE_CLIENT_ID"):
             self.assertIn(name, declared)
         for prof in _PROFILES:

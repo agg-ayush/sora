@@ -77,9 +77,7 @@ to wait ~10-15s and retry. No manual invocation needed in that path.
     not raise)
   - aws_profile `trilogy`, region `us-east-1`
 - Password in Keychain: `security add-generic-password -s saml2aws -a
-  ayushaggarwal018@gmail.com -w <pw>` (script:
-  `~/.hermes/scripts/saml2aws-keychain-setup.sh`, run inside tmux — needs a
-  real TTY)
+  ayushaggarwal018@gmail.com -w <pw>` (run inside tmux — needs a real TTY)
 
 ## Long-running scripts (S3 migrations, batch loops, multi-minute SSM waits)
 
@@ -101,8 +99,8 @@ is no clean stopping point.
 ## Pitfalls
 
 - **Empty keychain entry**: if the password prompt appears and Enter fails
-  with an auth error, the keychain entry is empty/corrupt — re-run
-  `saml2aws-keychain-setup.sh` inside a real tmux attach.
+  with an auth error, the keychain entry is empty/corrupt — re-run the
+  `security add-generic-password` command above inside a real tmux attach.
 - **`Credentials are not expired. Skipping.`**: not an error — saml2aws
   no-op. Use `--force` to override.
 - **MFA**: account has MFA `Auto`, but DevFactory Keycloak currently completes
