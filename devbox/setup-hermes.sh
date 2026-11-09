@@ -33,6 +33,15 @@ link_claude_skill() {
   ln -s "$src" "$dest"
 }
 
+# latent-spaces/brag: /brag and /brag-slim launch-video skills, shared by Hermes and Claude Code.
+BRAG_REPO="${BRAG_REPO:-$HOME/repos/brag}"
+ensure_brag_repo() {
+  if [ ! -d "$BRAG_REPO/.git" ]; then
+    mkdir -p "$(dirname "$BRAG_REPO")"
+    git clone -q https://github.com/latent-spaces/brag.git "$BRAG_REPO" || log "brag clone failed; /brag unavailable"
+  fi
+}
+
 link_claude_skills() {
   local src name public_skills
   mkdir -p "$CLAUDE_HOME/skills" "$HERMES_HOME/cache" "$SEATBELT_DIR"
@@ -52,6 +61,14 @@ link_claude_skills() {
   else
     log "Claude Code brainlift source missing: $public_skills/brainlift"
   fi
+  ensure_brag_repo
+  for name in brag brag-slim; do
+    if [ -f "$BRAG_REPO/skills/$name/SKILL.md" ]; then
+      link_claude_skill "$BRAG_REPO/skills/$name" "$CLAUDE_HOME/skills/$name"
+    else
+      log "Claude Code $name source missing: $BRAG_REPO/skills/$name"
+    fi
+  done
   if [ ! -L "$SEATBELT_DIR/skills" ] || [ "$(readlink "$SEATBELT_DIR/skills")" != "$CLAUDE_HOME/skills" ]; then
     link_claude_skill "$CLAUDE_HOME/skills" "$SEATBELT_DIR/skills"
   fi
@@ -175,6 +192,13 @@ fi
 if [ -f "$PUBLIC_SKILLS/brainlift/SKILL.md" ]; then
   link_skill "$PUBLIC_SKILLS/brainlift" "$HERMES_HOME/skills/brainlift"
 fi
+ensure_brag_repo
+mkdir -p "$HERMES_HOME/skills/creative"
+for name in brag brag-slim; do
+  if [ -f "$BRAG_REPO/skills/$name/SKILL.md" ]; then
+    link_skill "$BRAG_REPO/skills/$name" "$HERMES_HOME/skills/creative/$name"
+  fi
+done
 
 # 3b. Local Hermes source patches (patches/*.patch; see docs/local-upstream-mods.md).
 # Per file: already applied (reverse check passes) -> skip; applies cleanly -> apply; else warn loudly
