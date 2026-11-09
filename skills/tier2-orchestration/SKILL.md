@@ -146,7 +146,8 @@ STOP and ask, same as any other unstated-in-brief ambiguity.
     sentinel's self_heal.py — the Reflexion one-shot pattern.)
 12. **Design-review rounds capped at 3.** After the 3rd review, if still not
     approved → STOP and ESCALATE with the latest doc + outstanding blocking issues.
-    Do NOT start a 4th round. A blocking issue that reflects genuine ambiguity in
+    Do NOT start a 4th round. The plugin enforces this: `claude_orchestrate start`
+    refuses a review session once the card has used 3 (see Phase 3.3 step 3). A blocking issue that reflects genuine ambiguity in
     the TASK itself (not the doc) → ESCALATE for clarification, don't spin another
     round.
 13. **Deny-guard protects every spawned session.** `~/.hermes/scripts/deny-guard.sh`
@@ -275,7 +276,8 @@ target repo to ground the design; it does not write to it.
      doc and issues. **HARD LIMIT: at most 3
      review rounds total.** If still not approved after the 3rd review → STOP
      and ESCALATE to a human with the latest doc + outstanding blocking issues.
-     Do NOT start a 4th round.
+     Do NOT start a 4th round (`start` refuses it — same refusal handling as
+     Phase 3.3 step 3).
    - A blocking issue that reflects genuine ambiguity in the TASK itself (not the
      doc) → ESCALATE to a human for clarification; do not spin another round.
 
@@ -345,6 +347,7 @@ the same workdir.
    narrating past/fixed behavior. Docstrings: only what's necessary — what it does
    + non-obvious caller contract; no design-rationale or 'why' narration the code
    already shows. Prefer no comment over a noisy one." (points at files, not pasted text).
+   - In coding-session prompts, state the test-run rule: iterate with only the targeted spec/test; run the full suite once when the unit is done and again only after the code changes; a flaky failure gets its cause fixed, never a rerun until green.
    - In coding-session prompts for cross-file symbol navigation (references, implementations, renames), direct the worker to use Serena MCP tools (`mcp__serena__*` via `tool_search`) and `activate_project` with the repo root first; `read_file`/ripgrep are faster for single-file reads and greps.
    **Prepend auto-promoted error rules.** Before composing the prompt, run
    `python3 ~/.hermes/scripts/error-journal.py inject claude` and prepend the
@@ -458,7 +461,10 @@ back to Phase 2.
    agent's changes introduce a new failure, that's a gate failure. If they fail
    only on tests that were already red, that's not a gate failure (note it).
 2. Run the project's test suite YOURSELF via terminal in `<rundir>`. Read the real
-   exit code + output. Pass → review (3.3).
+   exit code + output. Pass → review (3.3). **A green full suite on a commit is
+   proof: do not rerun it on that commit.** Rerun the full suite only after the
+   code changes; a flaky failure gets its cause fixed, not a rerun until green;
+   while iterating, run only the targeted spec.
    - **First run `hermes verify <rundir> --phase test --save`** — it auto-detects
      the project's build/test recipe (and persists it to `.hermes/environment.json`
      for reuse). If verify detects the recipe correctly, use it. Fall back to the
@@ -559,6 +565,13 @@ session** (not the implementer session):
    `signal_trace` = the outstanding CRITICAL/HIGH findings summary, then STOP
    and ESCALATE to a human with the outstanding findings; do not
    start a 4th round. Do not open one fix session per finding.
+   The plugin enforces the cap: it counts review sessions per `kanban_task_id`
+   (code and design reviews separately, ledger under
+   `~/.hermes/tasks/.review-rounds/`) and `start` refuses the 4th with
+   `escalate:true`. On that refusal do not retry, rename the session, or review
+   via another route — `kanban_block kind=needs_input` with the outstanding
+   findings. Only a human can grant more rounds (edit the ledger or write
+   `<kanban_task_id>.extra`); no tool argument lifts it.
 4. A finding that conflicts with the plan text → ESCALATE (human decides which governs).
 5. **When the review route is down** (preflight probe fails, or the TF-auth
    fail-closed check above fires): STOP for

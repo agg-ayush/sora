@@ -256,7 +256,227 @@ def _seatbelt_headers() -> str:
     return f"x-tfy-api-key: {found['x-tfy-api-key']}\nx-maat-token: {found['x-maat-token']}"
 
 
+# ---------------------------------------------------------------------------
+# Review-round cap
+# ---------------------------------------------------------------------------
+# Review->fix loops are bounded in code, not only in the skill text: each
+# kanban card gets at most REVIEW_CAP_DEFAULT review sessions per kind
+# (code review / design review). The 4th `start` is refused. The model cannot
+# lift the cap through an argument; a human edits the ledger or drops an
+# override file (see _review_cap_reserve).
+
+REVIEW_CAP_DEFAULT = 3
+REVIEW_FREE_RESTARTS = 2  # crash-restarts of one review task_id that are not recounted
+
+# Session names: "review" (not "preview"), plus the short forms used in practice:
+# crev/drev/rev, optionally numbered (t2-x-crev2, t2-x-drev3, t-x-rev).
+_REVIEW_NAME_RE = re.compile(r"(?<!p)review|(?<![a-z])[cd]?rev\d*(?![a-z])", re.I)
+_DESIGN_NAME_RE = re.compile(r"design|(?<![a-z])d(?:ev)?rev|dreview", re.I)
+# Sessions that change code/docs, even when the name mentions a review
+# (review-fix, reviewfix1, design-revise2, drevision3, review-rework, ...).
+_FIXISH_NAME_RE = re.compile(r"fix|revis|rework|remediat|author|coder|address", re.I)
+_IMPL_NAME_RE = re.compile(r"(?<![a-z])impl", re.I)
+_REVIEW_PROMPT_STRONG_RE = re.compile(r"pr-review-toolkit|review-pr\b", re.I)
+_REVIEW_PROMPT_VERDICT_RE = re.compile(r"\b(?:write|writes|produce|emit)\b[^.\n]{0,80}\bverdict\b", re.I)
+
+
+def _review_cap() -> int:
+    try:
+        cap = int(os.environ.get("CLAUDE_ORCHESTRATE_REVIEW_CAP", "").strip())
+    except ValueError:
+        return REVIEW_CAP_DEFAULT
+    return cap if cap >= 1 else REVIEW_CAP_DEFAULT
+
+
+def _review_kind(task_id: str, prompt: Any) -> str | None:
+    """Return 'code' or 'design' when this start is a review session, else None."""
+    text = str(prompt or "")
+    if _FIXISH_NAME_RE.search(task_id):
+        is_review = False
+    elif _REVIEW_NAME_RE.search(task_id):
+        is_review = True
+    elif _IMPL_NAME_RE.search(task_id):
+        is_review = False  # impl sessions may mention the toolkit in their instructions
+    else:
+        is_review = bool(_REVIEW_PROMPT_STRONG_RE.search(text) or _REVIEW_PROMPT_VERDICT_RE.search(text))
+    if not is_review:
+        return None
+    if _DESIGN_NAME_RE.search(task_id):
+        return "design"
+    if not _REVIEW_PROMPT_STRONG_RE.search(text) and re.search(r"design doc", text, re.I):
+        return "design"
+    return "code"
+
+
+def _review_ledger_dir() -> Path:
+    return _tasks_root() / ".review-rounds"
+
+
+def _review_ledger_path(kanban_task: str) -> Path:
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", kanban_task)[:120] or "unknown"
+    return _review_ledger_dir() / f"{safe}.json"
+
+
+def _read_review_ledger(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text("utf-8"))
+        if isinstance(data, dict) and isinstance(data.get("rounds"), list):
+            return data
+    except (OSError, ValueError):
+        pass
+    return {"rounds": []}
+
+
+def _write_review_ledger(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+class _review_ledger_lock:
+    """Advisory exclusive lock so two concurrent starts cannot both take the last round."""
+
+    def __init__(self, path: Path):
+        self._lock_path = path.with_suffix(".lock")
+        self._fh = None
+
+    def __enter__(self):
+        self._lock_path.parent.mkdir(parents=True, exist_ok=True)
+        self._fh = open(self._lock_path, "a")
+        try:
+            import fcntl
+            fcntl.flock(self._fh, fcntl.LOCK_EX)
+        except ImportError:  # no fcntl (Windows): best effort
+            pass
+        return self
+
+    def __exit__(self, *exc):
+        if self._fh is not None:
+            self._fh.close()  # releases the flock
+        return False
+
+
+def _review_extra_rounds(path: Path) -> int:
+    """Human grant: an integer in <ledger>.extra adds that many rounds per kind."""
+    try:
+        return max(0, int(path.with_suffix(".extra").read_text("utf-8").strip()))
+    except (OSError, ValueError):
+        return 0
+
+
+def _previous_run_unfinished(task_id: str) -> bool:
+    """True when an earlier run of this task_id never wrote a terminal outcome (crashed)."""
+    raw = _read_text(_artifact_dir(task_id) / "outcome.md") or ""
+    return _parse_outcome(raw)["outcome"] is None
+
+
+def _review_cap_reserve(task_id: str, prompt: Any, kanban_task: str) -> tuple[dict | None, tuple | None]:
+    """Count this start against the card's review cap.
+
+    Returns (refusal, reservation). refusal is an ok:false result when the cap is
+    reached; reservation identifies the ledger entry so a failed launch can undo it.
+    Both None means the start is not a capped review session.
+    """
+    if not kanban_task:
+        return None, None
+    kind = _review_kind(task_id, prompt)
+    if kind is None:
+        return None, None
+    path = _review_ledger_path(kanban_task)
+    cap = _review_cap()
+    with _review_ledger_lock(path):
+        data = _read_review_ledger(path)
+        rounds = data["rounds"]
+        prior = [r for r in rounds if isinstance(r, dict) and r.get("task_id") == task_id]
+        if prior and _previous_run_unfinished(task_id):
+            restarts = sum(int(r.get("restarts", 0)) for r in prior)
+            if restarts < REVIEW_FREE_RESTARTS:
+                # Crash-restart of the same round: not a new round.
+                prior[0]["restarts"] = int(prior[0].get("restarts", 0)) + 1
+                data["kanban_task_id"] = kanban_task
+                _write_review_ledger(path, data)
+                return None, None
+        used = sum(1 for r in rounds if isinstance(r, dict) and r.get("kind") == kind)
+        allowed = cap + _review_extra_rounds(path)
+        if used >= allowed:
+            label = "design-review" if kind == "design" else "code-review"
+            names = ", ".join(str(r.get("task_id")) for r in rounds if isinstance(r, dict) and r.get("kind") == kind)
+            return {
+                "ok": False,
+                "error": (
+                    f"review-round cap reached: kanban task {kanban_task} already used {used} of {allowed} "
+                    f"{label} rounds ({names}). Do NOT start another review session. STOP and escalate to a human "
+                    f"with the outstanding findings from the latest verdict (kanban_block kind=needs_input). "
+                    f"A human can grant more rounds by writing an integer to {path.with_suffix('.extra')} "
+                    f"or by deleting/editing {path}; this cannot be changed from a tool argument."
+                ),
+                "review_rounds_used": used,
+                "review_cap": allowed,
+                "review_kind": kind,
+                "escalate": True,
+            }, None
+        rounds.append({"task_id": task_id, "kind": kind, "started_at": time.time(), "restarts": 0})
+        data["kanban_task_id"] = kanban_task
+        _write_review_ledger(path, data)
+    return None, (path, task_id, kind)
+
+
+def _review_cap_release(reservation: tuple) -> None:
+    """Undo a reservation when the launch failed, so a failed start does not burn a round."""
+    path, task_id, kind = reservation
+    try:
+        with _review_ledger_lock(path):
+            data = _read_review_ledger(path)
+            for i in range(len(data["rounds"]) - 1, -1, -1):
+                r = data["rounds"][i]
+                if isinstance(r, dict) and r.get("task_id") == task_id and r.get("kind") == kind:
+                    del data["rounds"][i]
+                    break
+            _write_review_ledger(path, data)
+    except OSError:
+        pass
+
+
+def _kanban_task_for(args: dict, task_id: str) -> str:
+    kanban_task = str(args.get("kanban_task_id") or "").strip()
+    if not kanban_task:
+        m_kb = re.match(r"^(?:t2-)?(t_[0-9a-f]{8})\b", task_id)
+        if m_kb:
+            kanban_task = m_kb.group(1)
+    return kanban_task
+
+
 def _start(args: dict) -> dict:
+    """Start a session, enforcing the per-card review-round cap first."""
+    task_id = str(args.get("task_id") or "").strip()
+    reservation = None
+    if task_id and args.get("prompt") and not _session_exists(task_id):
+        refusal, reservation = _review_cap_reserve(task_id, args.get("prompt"), _kanban_task_for(args, task_id))
+        if refusal is not None:
+            return refusal
+    try:
+        result = _start_session(args)
+    except BaseException:
+        if reservation:
+            _review_cap_release(reservation)
+        raise
+    if reservation and not result.get("ok"):
+        _review_cap_release(reservation)
+    return result
+
+
+def _start_session(args: dict) -> dict:
     task_id = str(args.get("task_id") or "").strip()
     prompt = args.get("prompt")
     workdir = str(args.get("workdir") or "").strip()
@@ -716,11 +936,7 @@ def _start(args: dict) -> dict:
     # kanban claim so a >TTL blocking call can't starve the claim into a stale
     # reclaim. tmux-spawned sessions never get a worker_pid from the dispatcher,
     # so the reclaimer's pid-alive extension doesn't protect them.
-    kanban_task = str(args.get("kanban_task_id") or "").strip()
-    if not kanban_task:
-        m_kb = re.match(r"^(?:t2-)?(t_[0-9a-f]{8})\b", task_id)
-        if m_kb:
-            kanban_task = m_kb.group(1)
+    kanban_task = _kanban_task_for(args, task_id)
     kanban_board = str(args.get("kanban_board") or "").strip()
     if kanban_task:
         meta["kanban_task_id"] = kanban_task
@@ -1225,7 +1441,7 @@ def _recover(args: dict) -> dict:
     if task_id:
         task_ids = [task_id]
     elif _tasks_root().exists():
-        task_ids = [p.name for p in _tasks_root().iterdir() if p.is_dir()]
+        task_ids = [p.name for p in _tasks_root().iterdir() if p.is_dir() and not p.name.startswith(".")]
     else:
         task_ids = []
 
