@@ -229,8 +229,8 @@ def main():
         if o is not None:
             line += "  sharpest hit %.2fs" % o
             bo = nearest(o, grid)
-            if bo is not None:
-                line += " => dropSeconds %.2f" % bo
+            if bo is not None:  # trust the hit only when it is close to the rise's own beat
+                line += " => dropSeconds %.2f" % (bo if abs(bo - b) <= 0.15 else b)
         print(line)
     if not picked:
         print("no clear drop; use the first audible moment, or a beat from the cue file")
