@@ -42,6 +42,20 @@ ensure_brag_repo() {
   fi
 }
 
+# heygen-com/hyperframes: the HyperFrames skills the full /brag workflow reads; skills/ only.
+HYPERFRAMES_REPO="${HYPERFRAMES_REPO:-$HOME/repos/hyperframes}"
+HYPERFRAMES_SKILLS="hyperframes hyperframes-cli hyperframes-registry media-use"
+ensure_hyperframes_repo() {
+  if [ ! -d "$HYPERFRAMES_REPO/.git" ]; then
+    mkdir -p "$(dirname "$HYPERFRAMES_REPO")"
+    if git clone -q --depth 1 --filter=blob:none --sparse https://github.com/heygen-com/hyperframes.git "$HYPERFRAMES_REPO"; then
+      git -C "$HYPERFRAMES_REPO" sparse-checkout set skills || log "hyperframes sparse checkout failed"
+    else
+      log "hyperframes clone failed; full /brag workflow unavailable"
+    fi
+  fi
+}
+
 link_claude_skills() {
   local src name public_skills
   mkdir -p "$CLAUDE_HOME/skills" "$HERMES_HOME/cache" "$SEATBELT_DIR"
@@ -67,6 +81,14 @@ link_claude_skills() {
       link_claude_skill "$BRAG_REPO/skills/$name" "$CLAUDE_HOME/skills/$name"
     else
       log "Claude Code $name source missing: $BRAG_REPO/skills/$name"
+    fi
+  done
+  ensure_hyperframes_repo
+  for name in $HYPERFRAMES_SKILLS; do
+    if [ -f "$HYPERFRAMES_REPO/skills/$name/SKILL.md" ]; then
+      link_claude_skill "$HYPERFRAMES_REPO/skills/$name" "$CLAUDE_HOME/skills/$name"
+    else
+      log "Claude Code $name source missing: $HYPERFRAMES_REPO/skills/$name"
     fi
   done
   if [ ! -L "$SEATBELT_DIR/skills" ] || [ "$(readlink "$SEATBELT_DIR/skills")" != "$CLAUDE_HOME/skills" ]; then
@@ -197,6 +219,12 @@ mkdir -p "$HERMES_HOME/skills/creative"
 for name in brag brag-slim; do
   if [ -f "$BRAG_REPO/skills/$name/SKILL.md" ]; then
     link_skill "$BRAG_REPO/skills/$name" "$HERMES_HOME/skills/creative/$name"
+  fi
+done
+ensure_hyperframes_repo
+for name in $HYPERFRAMES_SKILLS; do
+  if [ -f "$HYPERFRAMES_REPO/skills/$name/SKILL.md" ]; then
+    link_skill "$HYPERFRAMES_REPO/skills/$name" "$HERMES_HOME/skills/creative/$name"
   fi
 done
 
