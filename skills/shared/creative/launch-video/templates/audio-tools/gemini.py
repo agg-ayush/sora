@@ -35,9 +35,9 @@ UA = "launch-video/1.0 (+hermes)"
 HERMES_ENV = os.path.expanduser("~/.hermes/.env")
 
 
-def _from_env_file(name, path=HERMES_ENV):
+def _from_env_file(name, path=None):
     try:
-        with open(path) as fh:
+        with open(path or HERMES_ENV) as fh:
             for line in fh:
                 line = line.strip()
                 if line.startswith("export "):
