@@ -1,0 +1,14 @@
+{
+  "fps": 30,
+  "transitionFrames": 10,
+  "music": { "file": "music/happy-beats-vol-11.mp3", "dropSeconds": 16.75, "volume": 0.26 },
+  "reveal": { "scene": "title", "offsetFrames": 8 },
+  "scenes": [
+    { "id": "hook", "frames": 150, "vo": [["hook", 6]], "transition": "wipe" },
+    { "id": "title", "frames": 118, "vo": [["title", 14]], "transition": "slide" },
+    { "id": "esc", "frames": 575, "vo": [["req", 20], ["esc1", 186], ["esc2", 336]], "transition": "slide" },
+    { "id": "queue", "frames": 215, "vo": [["queue", 14]], "transition": "slide" },
+    { "id": "team", "frames": 275, "vo": [["team", 12]], "transition": "fade" },
+    { "id": "outro", "frames": 130, "vo": [["outro", 10]] }
+  ]
+}

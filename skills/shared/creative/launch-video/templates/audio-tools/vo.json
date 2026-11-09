@@ -1,0 +1,13 @@
+{
+ "voice": "Charon",
+ "lines": {
+  "hook": "Where's my request? Who has it? And how long has it been sitting there?",
+  "title": "Meet the Ticket Dashboard, with escalation built in.",
+  "req": "Everyone sees every ticket at a glance. Whose move it is, and exactly how long it's been waiting.",
+  "esc1": "Stuck? Hit Escalate, add a note, and send.",
+  "esc2": "Over in the help desk, the agent and the team lead are tagged right on the ticket. It's flagged as escalated, and they get an email.",
+  "queue": "Agents get a queue sorted by urgency. Escalations stay pinned to the top, until they're cleared.",
+  "team": "Team leads see the whole team. What's overdue, what's unassigned, and who's carrying the load. And they set the thresholds.",
+  "outro": "The Ticket Dashboard. Live now in Product."
+ }
+}

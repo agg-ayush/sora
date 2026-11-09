@@ -1,0 +1,21 @@
+{
+ "voice": "Charon",
+ "lines": {
+  "hook": "Tired of clicking through the UI for every little thing? Open the request. Jump to the help desk. Scroll the thread, type the reply, update the state. And tomorrow, do it all again.",
+  "ask": "What if your AI could just do it for you?",
+  "intro": "Introducing Product MCP. Plug your agent straight into Product.",
+  "webs": "Your agent connects to Product and the help desk, and does the work for you. It finds the request, reads the thread, replies, and updates the ticket.",
+  "acts": "It acts as you, with exactly the permissions you have in the app. Nothing more.",
+  "chat1": "Just ask, in plain English.",
+  "chat2": "Your agent finds what's waiting on you.",
+  "chat3": "Then it replies, on your behalf.",
+  "card": "It works with Claude, ChatGPT, or any agent that speaks MCP. You'll find it right on the Product home page.",
+  "setup1": "Connecting takes a minute. In Claude, open Connectors, and add a custom connector.",
+  "setup2": "Paste the Product server URL.",
+  "setup3": "Sign in, and approve.",
+  "setup4": "And you're connected. That's it.",
+  "outro": "Product MCP. Try it now, from the profile menu.",
+  "consol1": "Until now, it was three half-built pieces. An MCP for one object type. An app API that stopped at submission. And the help desk's own API.",
+  "consol2": "Now it's one clean MCP and API that covers everything."
+ }
+}
