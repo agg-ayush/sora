@@ -42,10 +42,13 @@ if os.path.exists(dest_path):
     except ValueError:
         sys.exit("existing %s is not valid JSON; refusing to overwrite" % dest_path)
 hooks = cur.setdefault("hooks", {})
+for event in list(hooks):
+    # drop our previous entries (any event), keep everything else
+    hooks[event] = [e for e in hooks[event] if "block-truefoundry" not in json.dumps(e)]
+    if not hooks[event]:
+        del hooks[event]
 for event, entries in tmpl["hooks"].items():
-    kept = [e for e in hooks.get(event, [])
-            if "block-truefoundry" not in json.dumps(e)]  # drop our previous entry, keep others
-    hooks[event] = kept + entries
+    hooks[event] = hooks.get(event, []) + entries
 tmp = dest_path + ".tmp"
 with open(tmp, "w") as f:
     json.dump(cur, f, indent=2)

@@ -1,22 +1,11 @@
 {
   "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "__HOOK_PATH__ session",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
     "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "__HOOK_PATH__ prompt",
+            "command": "__HOOK_PATH__",
             "timeout": 5
           }
         ]

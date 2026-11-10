@@ -3,14 +3,13 @@
 # LLM gateway (pay-per-token anthropic-primary billing). Seatbelt, Fireworks
 # and Anthropic direct login are untouched.
 #
-# Usage: block-truefoundry-hook.sh [prompt|session]
-#   prompt  (UserPromptSubmit): exit 2 + stderr message blocks the prompt.
-#   session (SessionStart):     prints {"continue": false, "stopReason": ...}.
+# Registered as a UserPromptSubmit hook: exit 2 + stderr message blocks the prompt.
+# (A SessionStart hook returning {"continue": false} was tested and does NOT stop
+# the session in Claude Code 2.1.318, so only UserPromptSubmit is used.)
 #
 # FAIL OPEN: any error, missing tool or unreadable env exits 0 silently. Only a
 # positive match on a TrueFoundry endpoint blocks.
 
-mode="${1:-prompt}"
 MSG="Claude Code must not run on the TrueFoundry gateway (pay-per-token anthropic-primary billing). Use claude_orchestrate with model_provider=seatbelt (or fireworks as fallback)."
 
 is_tf() { # stdin: text. Positive TrueFoundry endpoint match only.
@@ -73,13 +72,5 @@ fi
 
 [ "$hit" = 1 ] || exit 0
 
-case "$mode" in
-  session)
-    printf '{"continue": false, "stopReason": "%s"}\n' "$MSG"
-    exit 0
-    ;;
-  *)
-    printf '%s\n' "$MSG" >&2
-    exit 2
-    ;;
-esac
+printf '%s\n' "$MSG" >&2
+exit 2
