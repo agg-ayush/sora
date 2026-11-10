@@ -364,6 +364,19 @@ json.dump(settings, open(sb_settings_path, "w"), indent=2)
 PY
 fi
 
+# 6b. Machine-wide Claude Code managed hook: blocks Claude Code on the TrueFoundry LLM gateway
+# (pay-per-token anthropic-primary billing). Needs root; without passwordless sudo, print the
+# one-line command for the owner and continue.
+if sudo -n true 2>/dev/null; then
+  if sudo -n sh "$REPO_DIR/config/claude-code/install-managed-hook.sh"; then
+    log "installed Claude Code managed hook (blocks TrueFoundry endpoint)"
+  else
+    log "WARNING: Claude Code managed hook install failed; run: sudo sh $REPO_DIR/config/claude-code/install-managed-hook.sh"
+  fi
+else
+  log "NOTE: Claude Code managed hook not installed (no passwordless sudo). Run once: sudo sh $REPO_DIR/config/claude-code/install-managed-hook.sh"
+fi
+
 # 7. Global gitignore (.serena/, .ui-flow/, .graphify/, graphify-out/, .claude/settings.local.json)
 GIT_IGNORE="$(git config --global core.excludesfile || true)"
 if [ -z "$GIT_IGNORE" ]; then
