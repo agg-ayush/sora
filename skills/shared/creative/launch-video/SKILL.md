@@ -43,6 +43,7 @@ The pace comes from **structure, not faster speech**:
 ## Layout
 
 - `templates/`: the one default project (Remotion 4.0.290, React/TS, ~47s). Helpers worth reusing: `src/cam.tsx` (`Cam` with log-space zoom, `fit(rect)`, `WorldCursor` drawn in screen space so it doesn't grow with zoom, `Sfx`), `src/dash.tsx` (anchors via `world()`/`worldRect()`), `src/apps.tsx` (look-alike windows with named anchors), `src/kit.tsx` (`Camera`, `Cursor`, `Words`, `Caret`, `LogoMark`), `src/theme.ts`.
+- `templates/stills.mjs`, `templates/render.sh`: stills and full renders from one private bundle that is deleted on exit and on SIGINT/SIGTERM/SIGHUP.
 - `templates/src/scenes.json`: the **single scene table** (ids, frame lengths, VO placement, transitions, music file and drop). `Launch.tsx` and `tl.mjs` both read it; add a scene by adding a row and a component in `Launch.tsx`'s `COMPONENTS` map.
 - `templates/audio-tools/`: `make_vo.py` + `gemini.py` (TrueFoundry TTS, transcription, mix review), `sfx.js`, `music_drop.py` (beat-snapped, optionally audio-verified drop times), `check_mix.py` (final-render audio check), `vo.json` (the script).
 - `templates/public/music/`: three bundled CC BY tracks with beat cues and a README (credit line!).
@@ -58,7 +59,7 @@ node stills.mjs 60 300 600                 # stills -> out/s/<frame>.png (review
 node tl.mjs                                # VO timeline + spill check
 # edit audio-tools/vo.json (script), then record + verify every line:
 python3 audio-tools/make_vo.py
-npx remotion render src/index.ts Launch out/video.mp4 --concurrency=8 --crf=16 --audio-bitrate=256k
+./render.sh Launch                         # bundles once, renders out/Launch.mp4, deletes the bundle on exit/INT/TERM/HUP
 ```
 Needs Node, Python 3 (3.9+, stdlib only) and `ffmpeg`. `public/vo/durations.json` ships with the sample timings so the project compiles before you record; `make_vo.py` overwrites it. Re-run `node tl.mjs` after any change to lengths or VO.
 
@@ -110,7 +111,8 @@ Everything goes through **TrueFoundry** (`TRUEFOUNDRY_API_KEY` from the environm
 
 ## 5. Environment pitfalls
 
-- If Remotion's Chrome Headless Shell download fails ("No browser found"), put the path of a local Chrome Headless Shell in a `.browser` file (`stills.mjs` reads it) and pass `--browser-executable=$(cat .browser)` to `remotion render`.
+- If Remotion's Chrome Headless Shell download fails ("No browser found"), put the path of a local Chrome Headless Shell in a `.browser` file (`stills.mjs` reads it) and pass `--browser-executable=$(cat .browser)` to `remotion render` (`render.sh` does this).
+- Remotion `bundle()` creates a ~64 MB webpack dir in `TMPDIR` and never deletes it; always pass `outDir` and remove it in `finally`/signal traps, and reuse one bundle across a render batch. `stills.mjs` and `render.sh` already do this; do not call `npx remotion render src/index.ts ...` directly or bundle per composition.
 - Use the template's pinned `typescript`/Remotion versions; `npx tsc` outside the project resolves to an unrelated package. Run `npx tsc --noEmit` after `npm install`. If `NODE_ENV=production` is set, `npm install` skips dev dependencies (the template keeps TypeScript in `dependencies` for that reason).
 - `make_vo.py` shells out to `ffmpeg`; make sure a working one is first on PATH.
 - On slow or shared hosts, do not render there: build and render on a workstation.

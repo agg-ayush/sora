@@ -5,6 +5,7 @@ import os
 import sys
 import tempfile
 import time
+import shutil
 import unittest
 from pathlib import Path
 
@@ -83,6 +84,95 @@ class PruneStaleFilesTest(unittest.TestCase):
 
     def test_missing_root_is_ignored(self):
         self.assertIsNone(hygiene.prune_stale_files([(self.root / "nope", False)], days=7, now=self.now))
+
+
+HOUR = 3600
+
+
+class PruneRemotionBundlesTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.scratch = Path(self._tmp.name) / "scratch"
+        self.scratch.mkdir()
+        self.now = time.time()
+
+    def _bundle(self, name: str, age_hours: float) -> Path:
+        d = self.scratch / name
+        (d / "static").mkdir(parents=True)
+        (d / "index.html").write_text("x" * 1024)
+        t = self.now - age_hours * HOUR
+        for p in (d / "static", d / "index.html", d):
+            os.utime(p, (t, t))
+        return d
+
+    def _prune(self, **kw):
+        kw.setdefault("held_open", lambda _p: False)
+        return hygiene.prune_remotion_bundles(self.scratch, now=self.now, **kw)
+
+    def test_old_bundle_removed_recent_kept(self):
+        old = self._bundle("remotion-webpack-bundle-OLD123", 3)
+        new = self._bundle("remotion-webpack-bundle-NEW456", 1)
+        result = self._prune()
+        self.assertFalse(old.exists())
+        self.assertTrue(new.exists())
+        self.assertIn("removed 1 dirs", result)
+
+    def test_recent_file_inside_old_dir_keeps_it(self):
+        d = self._bundle("remotion-webpack-bundle-BUSY", 5)
+        fresh = d / "static" / "fresh.js"
+        fresh.write_text("x")
+        os.utime(fresh, (self.now - 600, self.now - 600))
+        self._prune()
+        self.assertTrue(d.exists())
+
+    def test_held_open_bundle_is_kept(self):
+        d = self._bundle("remotion-webpack-bundle-HELD", 10)
+        self.assertIsNone(self._prune(held_open=lambda _p: True))
+        self.assertTrue(d.exists())
+
+    def test_real_lsof_detects_open_file(self):
+        if not shutil.which("lsof"):
+            self.skipTest("lsof not installed")
+        d = self._bundle("remotion-webpack-bundle-LSOF", 10)
+        self.assertFalse(hygiene._held_open(d))
+        with open(d / "index.html") as fh:  # noqa: F841 - held open on purpose
+            self.assertTrue(hygiene._held_open(d))
+
+    def test_other_names_untouched_even_when_old(self):
+        other = self._bundle("some-other-cache", 100)
+        near = self._bundle("remotion-bundle-xyz", 100)
+        self.assertIsNone(self._prune())
+        self.assertTrue(other.exists() and near.exists())
+
+    def test_symlink_and_plain_file_with_prefix_untouched(self):
+        outside = Path(self._tmp.name) / "outside"
+        outside.mkdir()
+        (outside / "keep.txt").write_text("k")
+        link = self.scratch / "remotion-webpack-bundle-LINK"
+        link.symlink_to(outside)
+        t = self.now - 10 * HOUR
+        os.utime(link, (t, t), follow_symlinks=False)
+        plain = self.scratch / "remotion-webpack-bundle-FILE"
+        plain.write_text("x")
+        os.utime(plain, (t, t))
+        self.assertIsNone(self._prune())
+        self.assertTrue(link.is_symlink() and plain.exists() and (outside / "keep.txt").exists())
+
+    def test_dry_run_deletes_nothing(self):
+        d = self._bundle("remotion-webpack-bundle-DRY", 4)
+        result = self._prune(dry_run=True)
+        self.assertTrue(d.exists())
+        self.assertIn("removed 1 dirs", result)
+
+    def test_missing_scratch_dir_is_ignored(self):
+        self.assertIsNone(hygiene.prune_remotion_bundles(self.scratch / "nope", now=self.now))
+
+    def test_stale_rule_unchanged_for_non_bundle_entries(self):
+        # A 3-hour-old ordinary dir is NOT removed by the bundle rule (the 7-day rule still governs it).
+        d = self._bundle("remotion-v4-assets-abc", 3)
+        self._prune()
+        self.assertTrue(d.exists())
 
 
 if __name__ == "__main__":

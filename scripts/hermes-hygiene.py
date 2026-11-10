@@ -11,6 +11,9 @@ else reclaims:
   * ``hermes doctor --fix``       — surfaces WAL/disk/dependency problems and
     auto-fixes what it can (TCC anchor, WAL checkpoint, etc.).
 
+  * Leaked ``remotion-webpack-bundle-*`` dirs in the scratch dir are removed after 2 hours
+    (not 7 days) when no process holds them open; see ``prune_remotion_bundles``.
+
 Designed for a ``no_agent`` cron: prints ONLY when something was reclaimed or
 doctor found an actionable issue; silent otherwise.
 
@@ -247,6 +250,69 @@ def prune_stale_files(roots: list[tuple[Path, bool]] | None = None, days: int = 
     return f"stale caches/tmp: removed {removed} entries older than {days} days ({freed / (1024 * 1024):.0f} MB)"
 
 
+BUNDLE_PREFIX = "remotion-webpack-bundle-"
+BUNDLE_MIN_AGE_HOURS = 2
+SCRATCH_DIR = HOME / ".hermes" / "cache" / "scratch"
+
+
+def _held_open(path: Path) -> bool:
+    """True if any process has a file open under *path* (cwd, mmap or fd), or if that cannot be told.
+
+    lsof exits 1 when nothing matches; any other failure counts as held (fail safe: keep the dir).
+    """
+    try:
+        r = subprocess.run(
+            ["lsof", "-w", "-t", "+D", str(path)],
+            capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return True
+    if r.returncode == 0:
+        return bool(r.stdout.strip())
+    return r.returncode != 1 or bool(r.stdout.strip())
+
+
+def prune_remotion_bundles(scratch: Path | None = None, hours: float = BUNDLE_MIN_AGE_HOURS,
+                           now: float | None = None, dry_run: bool = False,
+                           held_open=_held_open) -> str | None:
+    """Remove leaked ``remotion-webpack-bundle-*`` dirs (~64 MB each) older than *hours*.
+
+    Remotion's bundler mkdtemp()s one per render under TMPDIR and never removes it when the render
+    is SIGTERMed or the caller forgets; 250 of them filled a disk in under 3 hours. The 7-day stale
+    rule is far too slow for that. Narrow on purpose: only real directories (not symlinks) directly
+    under the Hermes scratch dir, only that name prefix, only when nothing inside was modified for
+    *hours* and no process holds a file in it open.
+    """
+    root = SCRATCH_DIR if scratch is None else scratch
+    if not root.is_dir():
+        return None
+    cutoff = (now or time.time()) - hours * 3600
+    freed, removed = 0, 0
+    for entry in sorted(root.iterdir()):
+        if not entry.name.startswith(BUNDLE_PREFIX):
+            continue
+        try:
+            if entry.is_symlink() or not entry.is_dir():
+                continue
+        except OSError:
+            continue
+        if _newest_mtime(entry) >= cutoff or held_open(entry):
+            continue
+        size = _entry_size(entry)
+        if dry_run:
+            print(f"would remove {size / (1024 * 1024):8.1f} MB  {entry}")
+        else:
+            try:
+                shutil.rmtree(entry)
+            except OSError:
+                continue
+        freed += size
+        removed += 1
+    if not removed:
+        return None
+    return f"remotion bundles: removed {removed} dirs older than {hours:g}h ({freed / (1024 * 1024):.0f} MB)"
+
+
 def doctor_issues() -> str | None:
     """Report doctor's failures/warnings, filtered to only actionable items."""
     r = hermes("doctor", "--fix", timeout=300)
@@ -265,6 +331,11 @@ def doctor_issues() -> str | None:
 
 
 def main() -> int:
+    if "--dry-run" in sys.argv[1:]:
+        # Only the file-removal rules; the checkpoint/DB/doctor steps have no dry-run mode.
+        for fn in (prune_stale_files, prune_remotion_bundles):
+            print(f"{fn.__name__}: {fn(dry_run=True)}")
+        return 0
     lines = [
         ln for ln in (
             prune_checkpoints(),
@@ -272,6 +343,7 @@ def main() -> int:
             optimize_sessions(),
             checkpoint_wal(),
             prune_stale_files(),
+            prune_remotion_bundles(),
             doctor_issues(),
         ) if ln
     ]
