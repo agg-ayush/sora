@@ -7,7 +7,7 @@ license: MIT
 metadata:
   hermes:
     tags: [Adobe, Acrobat Sign, REST API, Forms]
-    related_skills: [grounded-citations]
+    related_skills: [research]
 ---
 
 # Adobe Acrobat Sign v6 form values

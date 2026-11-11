@@ -7,7 +7,7 @@ license: MIT
 metadata:
   hermes:
     tags: [Adobe, Acrobat Sign, REST API, e-signature, webhooks, integration]
-    related_skills: [grounded-citations, sherlock]
+    related_skills: [research, sherlock]
 ---
 
 # Adobe Acrobat Sign REST v6 integration

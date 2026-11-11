@@ -53,8 +53,9 @@ link_claude_skills() {
     log "Claude Code brainlift source missing: $public_skills/brainlift"
   fi
   # Shared skills that Claude Code also loads (single source under skills/shared; Hermes links them below).
-  for name in launch-video; do
-    src="$REPO_DIR/skills/shared/creative/$name"
+  for rel in creative/launch-video research/research; do
+    name="$(basename "$rel")"
+    src="$REPO_DIR/skills/shared/$rel"
     if [ -f "$src/SKILL.md" ]; then
       link_claude_skill "$src" "$CLAUDE_HOME/skills/$name"
     else

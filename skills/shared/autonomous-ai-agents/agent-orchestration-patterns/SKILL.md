@@ -24,7 +24,7 @@ Use for a live multi-agent build with review rounds, shared worktrees, a staged 
 - PR/worktree/CI: `references/iterative-fix-loop-conflict-resolution.md`, `references/scope-creep-and-baseline-verification.md`, `references/worktree-provenance-verification.md`, `references/already-resolved-task-verification.md`, `references/issue-coupling-consolidation.md`, `references/issue-to-fix-location-mismatch.md`, `references/repo-targeting-before-dispatch.md`, `references/ad-hoc-fixture-verification.md`.
 - Workers and board: `references/t1-card-decomposition-and-decision-relay.md`, `references/kanban-board-watcher-pattern.md`, `references/background-conductor-pattern.md`, `references/claude-orchestrate-plugin-mechanics.md`, `references/claude-orchestrate-permission-prompts-and-crash-retry.md`, `references/codex-launcher-instant-death.md`, `references/parallel-batch-execution.md`, `references/when-not-to-delegate-research.md`.
 - Deploy/incident: `references/infra-migration-staged-rollout.md`, `references/deploy-pipeline-and-demo-ops.md`, `references/incident-firefight-orchestration.md`, `references/orchestration-retrospective-forensics.md`, `references/playwright-hard-to-simulate-conditions.md`, `references/handoff-brief-config-not-code.md`.
-- Tool adoption and hiring evaluation: `references/agent-tool-adoption.md`, `references/tool-evaluations.md`, `references/hiring-eval-report-generation.md`, `references/hiring-eval-verification.md`.
+- Tool adoption and hiring evaluation: the `research` skill's `references/adopt-adapt-build.md` (vetting a named tool or surveying for one), `references/tool-evaluations.md`, `references/hiring-eval-report-generation.md`, `references/hiring-eval-verification.md`.
 
 ## Practical verification
 

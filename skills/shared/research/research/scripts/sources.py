@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Citation ledger for grounded answers and documents.
 
-Owns the ``url -> [n]`` mapping used by the ``grounded-citations`` skill.
+Owns the ``url -> [n]`` mapping used by the ``research`` skill (references/citations.md).
 Ids are assigned at retrieval time and never change, so a draft's ``[3]``
 always resolves to the same page.  The model only ever emits integers the
 ledger handed it, which is what makes the citations verifiable.
