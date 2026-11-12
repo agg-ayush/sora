@@ -107,7 +107,7 @@ Lint, types and an impact-scoped regression run (the test-impact map plus anythi
 
 - One Opus session, `/hermes-dev-process:card-review`, two verdicts:
   - Conformance (`conformance-reviewer`): anything in the design missing, extra or misunderstood; boundaries respected; every requirement has a test with a real assertion; verification promises kept; changed assertions justified.
-  - Quality: pr-review-toolkit `code-reviewer`, `silent-failure-hunter` and `state-transition-reviewer`, plus `mutation-probe` (at most 5 targeted mutants in a throwaway worktree, impacted tests only) to flag tests that cannot fail.
+  - Quality: pr-review-toolkit `code-reviewer` always, plus `silent-failure-hunter` (error handling changed), `state-transition-reviewer` (stateful behaviour), `type-design-analyzer` (new or changed types), `pr-test-analyzer` (test files changed at full tier) and `comment-analyzer` (substantial new comments), plus `mutation-probe` (at most 5 targeted mutants in a throwaway worktree, impacted tests only) to flag tests that cannot fail. Each runs only when its trigger applies.
 - Approach preferences are out of scope and dropped. A defect with evidence that the design caused it is labelled design-defect and routed to the amendment route, not fixed ad hoc.
 - Every finding needs file:line and the concrete failure it causes. Findings are severity-gated and deduplicated; only blocking ones start a fix round.
 
