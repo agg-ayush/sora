@@ -413,13 +413,314 @@ def _kanban_task_for(args: dict, task_id: str) -> str:
     return kanban_task
 
 
+# ---------------------------------------------------------------------------
+# Process v2 gates and metrics
+# ---------------------------------------------------------------------------
+# Active only when ~/.hermes/tasks/t2-<kanban_task_id>/process.json exists with
+# "version": 2; without it a card is legacy and nothing here runs. A gate that
+# hits an unexpected error logs and allows the start: a bug here must never
+# wedge the pipeline. A refusal never reserves or counts a review round.
+
+_V2_PRECHECK_REL = Path("skills/shared/software-development/design/scripts/design_precheck.py")
+_V2_FAIL_UPPER_RE = re.compile(r"\bFAIL(?:ED)?\b|[✗✕×]")
+_V2_FAIL_COUNT_RE = re.compile(r"\b[1-9]\d*\s+(?:failed|failing|errors?)\b", re.I)
+_V2_PASS_RE = re.compile(r"\b[1-9]\d*\s+passed\b|\bPASS\b|^ok\s|\bpassing\b|[✓✔]", re.I | re.M)
+_V2_EXIT_RE = re.compile(r"^\s*(?:exit(?:[ _-]?(?:code|status))?|rc)\s*[:=]\s*(-?\d+)\s*$", re.I | re.M)
+_V2_FINDING_RE = re.compile(r"^\s*[-*]?\s*F\d+\b.*$", re.M)
+_V2_ESCAPE_RE = re.compile(r"\[escape:\s*(design|impl|test|noise)\s*\]", re.I)
+_V2_VERDICT_PATH_RES = (
+    re.compile(r"((?:/|~/)[^\s`'\"<>)]*verdict[^\s`'\"<>)]*)", re.I),
+    re.compile(r"verdict[^\n]{0,120}?((?:/|~/)[^\s`'\"<>)]+)", re.I),
+)
+
+
+def _v2_log(msg: str) -> None:
+    print(f"[claude-orchestrate] process-v2: {msg}", file=sys.stderr)
+
+
+def _v2_card(kanban_task: str) -> tuple[Path, dict] | None:
+    """(card_dir, process.json) when the card opted into process v2, else None."""
+    if not kanban_task:
+        return None
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", kanban_task)[:120]
+    card = _tasks_root() / f"t2-{safe}"
+    try:
+        proc = json.loads((card / "process.json").read_text("utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(proc, dict) or proc.get("version") != 2:
+        return None
+    return card, proc
+
+
+def _v2_metrics_append(card: Path, stage: str, event: str, round_: int | None, detail: Any) -> None:
+    row = {"ts": round(time.time(), 3), "stage": stage, "event": event, "round": round_, "detail": detail}
+    try:
+        card.mkdir(parents=True, exist_ok=True)
+        with open(card / "metrics.jsonl", "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row) + "\n")  # one write: O_APPEND keeps lines whole
+    except OSError as exc:
+        _v2_log(f"metrics write failed: {exc}")
+
+
+def _v2_precheck_path() -> Path | None:
+    here = Path(__file__).resolve().parent.parent
+    home = get_hermes_home()
+    candidates = [here / _V2_PRECHECK_REL, home / "skills" / "design" / "scripts" / "design_precheck.py"]
+    candidates += sorted(home.glob("skills/*/design/scripts/design_precheck.py"))
+    candidates += sorted(home.glob("skills/*/*/design/scripts/design_precheck.py"))
+    return next((c for c in candidates if c.is_file()), None)
+
+
+def _v2_load_precheck():
+    script = _v2_precheck_path()
+    if script is None:
+        return None
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("hermes_design_precheck", script)
+    if spec is None or spec.loader is None:
+        return None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return getattr(mod, "check", None)
+
+
+def _v2_design_gate(card: Path, proc: dict) -> dict | None:
+    """Run the design pre-check by import. Returns a refusal or None."""
+    check = _v2_load_precheck()
+    if check is None:
+        _v2_log("design_precheck.py not found; design pre-check skipped")
+        return {"warning": "design pre-check script not found; gate skipped"}
+    design = str(proc.get("design_path") or "").strip() or str(card / "design.md")
+    ok, problems, warnings = check(design)
+    if ok:
+        return {"warnings": list(warnings or [])} if warnings else None
+    problems = [str(p) for p in (problems or [])] or ["pre-check failed without details"]
+    listing = "\n".join(f"- {p}" for p in problems)
+    return {
+        "ok": False,
+        "error": (
+            f"design pre-check failed for {design} ({len(problems)} problem(s)):\n{listing}\n"
+            "Do NOT start the design review yet. Send the design back to the design author to fix these, "
+            "then start the review again. No review round was used."
+        ),
+        "escalate": False,
+        "precheck_failed": True,
+        "missing": problems,
+        "review_kind": "design",
+    }
+
+
+def _v2_run_text(path: Path) -> tuple[str, str]:
+    """(first line = command, rest = runner output) of an evidence file."""
+    raw = path.read_text("utf-8", errors="replace")
+    head, _, rest = raw.partition("\n")
+    return head, rest
+
+
+def _v2_exit_code(text: str) -> int | None:
+    found = _V2_EXIT_RE.findall(text)
+    return int(found[-1]) if found else None
+
+
+def _v2_red_ok(rest: str) -> bool:
+    code = _v2_exit_code(rest)
+    if code == 0:
+        return False
+    return bool(_V2_FAIL_UPPER_RE.search(rest) or _V2_FAIL_COUNT_RE.search(rest) or (code or 0) != 0)
+
+
+def _v2_green_ok(rest: str) -> bool:
+    if _V2_FAIL_UPPER_RE.search(rest) or _V2_FAIL_COUNT_RE.search(rest):
+        return False
+    code = _v2_exit_code(rest)
+    if code is not None:
+        return code == 0
+    return bool(_V2_PASS_RE.search(rest))
+
+
+def _v2_evidence_problems(card: Path) -> list[str]:
+    ev = card / "evidence"
+    reds, greens, problems = [], [], []
+    for kind, bucket in (("red", reds), ("green", greens)):
+        for f in sorted(ev.glob(f"{kind}-*.txt")):
+            try:
+                _, rest = _v2_run_text(f)
+            except OSError:
+                continue
+            if rest.strip():
+                bucket.append((f, rest))
+    if not reds:
+        problems.append("no non-empty evidence/red-*.txt (save the failing test run before implementing: "
+                        "first line the exact test command, then the raw runner output)")
+    elif not any(_v2_red_ok(rest) for _, rest in reds):
+        names = ", ".join(f.name for f, _ in reds)
+        problems.append(f"{names} does not show a failing test (expected FAIL, FAILED, failed, a cross mark "
+                        "or a nonzero exit line); RED must fail before the fix")
+    if not greens:
+        problems.append("no non-empty evidence/green-*.txt (save the passing run after implementing)")
+    else:
+        for f, rest in greens:
+            if not _v2_green_ok(rest):
+                problems.append(f"{f.name} does not show a clean passing run (failures present, nonzero exit "
+                                "or no pass marker); GREEN must pass without failures")
+    return problems
+
+
+def _v2_code_gate(card: Path, proc: dict) -> dict | None:
+    if proc.get("tier") not in ("light", "full") and proc.get("kind") != "bugfix":
+        return None
+    problems = _v2_evidence_problems(card)
+    if not problems:
+        return None
+    listing = "\n".join(f"- {p}" for p in problems)
+    return {
+        "ok": False,
+        "error": (
+            f"code review refused: RED/GREEN evidence missing or invalid in {card / 'evidence'}:\n{listing}\n"
+            "Do NOT start the code review yet. Send the card back to the implementer to save the missing "
+            "evidence, then start the review again. No review round was used."
+        ),
+        "escalate": False,
+        "evidence_missing": problems,
+        "review_kind": "code",
+    }
+
+
+def _v2_stage(task_id: str, review_kind: str | None) -> str:
+    if review_kind:
+        return f"{review_kind}_review"
+    name = task_id.lower()
+    if re.search(r"ground|explor", name):
+        return "grounding"
+    if re.search(r"design|author", name) and not re.search(r"fix", name):
+        return "design"
+    if re.search(r"fix|address|remediat|rework", name):
+        return "fix"
+    if re.search(r"impl|coder|test", name):
+        return "implementation"
+    return "other"
+
+
+def _v2_gate_start(task_id: str, prompt: Any, kanban_task: str) -> tuple[dict | None, dict | None]:
+    """(context, refusal) for a start. Both None for legacy cards. Fails open."""
+    try:
+        found = _v2_card(kanban_task)
+        if found is None:
+            return None, None
+        card, proc = found
+        kind = _review_kind(task_id, prompt)
+        ctx = {"card": card, "kind": kind, "stage": _v2_stage(task_id, kind), "prompt": str(prompt or "")}
+        gate = _v2_design_gate(card, proc) if kind == "design" else _v2_code_gate(card, proc) if kind == "code" else None
+        if gate and gate.get("ok") is False:
+            _v2_metrics_append(card, ctx["stage"], "refused", None, {
+                "task_id": task_id, "reason": "precheck" if kind == "design" else "evidence",
+                "missing": gate.get("missing") or gate.get("evidence_missing"),
+            })
+            return ctx, gate
+        if gate:
+            ctx["warnings"] = gate.get("warnings") or [gate.get("warning")]
+        return ctx, None
+    except Exception as exc:  # noqa: BLE001 - fail open
+        _v2_log(f"gate error, allowing start: {exc!r}")
+        return None, None
+
+
+def _v2_review_round(kanban_task: str, task_id: str, kind: str) -> int | None:
+    rows = [r for r in _read_review_ledger(_review_ledger_path(kanban_task))["rounds"]
+            if isinstance(r, dict) and r.get("kind") == kind]
+    idx = [i for i, r in enumerate(rows) if r.get("task_id") == task_id]
+    return (idx[-1] + 1) if idx else None
+
+
+def _v2_verdict_path(prompt: str, card: Path, round_: int | None) -> Path | None:
+    for rx in _V2_VERDICT_PATH_RES:
+        m = rx.search(prompt)
+        if m:
+            return Path(m.group(1).rstrip(".,;:")).expanduser()
+    if round_:
+        return card / "review" / f"verdict-r{round_}.md"
+    return None
+
+
+def _v2_note_started(ctx: dict, task_id: str, kanban_task: str) -> None:
+    try:
+        kind, card = ctx["kind"], ctx["card"]
+        round_ = _v2_review_round(kanban_task, task_id, kind) if kind else None
+        side = {"started_at": time.time(), "stage": ctx["stage"], "round": round_, "kind": kind,
+                "card": card.as_posix(), "ended": False}
+        if kind == "code":
+            vp = _v2_verdict_path(ctx["prompt"], card, round_)
+            side["verdict_path"] = vp.as_posix() if vp else None
+        _write_text(_artifact_dir(task_id) / ".metrics.json", json.dumps(side))
+        detail = {"task_id": task_id}
+        if ctx.get("warnings"):
+            detail["warnings"] = ctx["warnings"]
+        _v2_metrics_append(card, ctx["stage"], "start", round_, detail)
+    except Exception as exc:  # noqa: BLE001
+        _v2_log(f"start metrics failed: {exc!r}")
+
+
+def _v2_finding_counts(path: Path) -> dict | None:
+    try:
+        text = path.read_text("utf-8", errors="replace")
+    except OSError:
+        return None
+    counts = {"design": 0, "impl": 0, "test": 0, "noise": 0, "unlabelled": 0, "total": 0, "blocking": 0}
+    for line in _V2_FINDING_RE.findall(text):
+        m = _V2_ESCAPE_RE.search(line)
+        counts[m.group(1).lower() if m else "unlabelled"] += 1
+        counts["total"] += 1
+        if re.search(r"\[BLOCKING\]", line, re.I):
+            counts["blocking"] += 1
+    return counts
+
+
+def _v2_record_end(task_id: str, outcome: str) -> None:
+    """Append one `end` event when a v2 session's outcome is first collected."""
+    try:
+        side_path = _artifact_dir(task_id) / ".metrics.json"
+        raw = _read_text(side_path)
+        if not raw:
+            return
+        side = json.loads(raw)
+        if side.get("ended"):
+            return
+        card = Path(side["card"])
+        detail: dict = {"task_id": task_id, "outcome": outcome,
+                        "minutes": round((time.time() - float(side["started_at"])) / 60, 2)}
+        if side.get("kind") == "code":
+            candidates = [Path(side["verdict_path"])] if side.get("verdict_path") else []
+            if side.get("round"):
+                candidates.append(card / "review" / f"verdict-r{side['round']}.md")
+            for vp in candidates:
+                counts = _v2_finding_counts(vp)
+                if counts is not None:
+                    detail["findings"] = counts
+                    break
+        side["ended"] = True
+        _write_text(side_path, json.dumps(side))
+        _v2_metrics_append(card, side["stage"], "end", side.get("round"), detail)
+    except Exception as exc:  # noqa: BLE001
+        _v2_log(f"end metrics failed: {exc!r}")
+
+
 def _start(args: dict) -> dict:
-    """Start a session, enforcing the per-card review-round cap first."""
+    """Start a session, enforcing process v2 gates (v2 cards only), then the per-card review-round cap."""
     task_id = str(args.get("task_id") or "").strip()
     reservation = None
+    ctx = None
+    kanban_task = ""
     if task_id and args.get("prompt") and not _session_exists(task_id):
-        refusal, reservation = _review_cap_reserve(task_id, args.get("prompt"), _kanban_task_for(args, task_id))
+        kanban_task = _kanban_task_for(args, task_id)
+        ctx, gate_refusal = _v2_gate_start(task_id, args.get("prompt"), kanban_task)
+        if gate_refusal is not None:
+            return gate_refusal
+        refusal, reservation = _review_cap_reserve(task_id, args.get("prompt"), kanban_task)
         if refusal is not None:
+            if ctx:
+                _v2_metrics_append(ctx["card"], ctx["stage"], "refused", None,
+                                   {"task_id": task_id, "reason": "review-round cap"})
             return refusal
     try:
         result = _start_session(args)
@@ -429,6 +730,8 @@ def _start(args: dict) -> dict:
         raise
     if reservation and not result.get("ok"):
         _review_cap_release(reservation)
+    if ctx and result.get("ok"):
+        _v2_note_started(ctx, task_id, kanban_task)
     return result
 
 
@@ -883,9 +1186,10 @@ def _read_outcome(task_id: str) -> dict:
         pass
 
     # Artifact dir wins on a valid token; the worktree copy is cleaned up either way.
-    if parsed["outcome"] is not None:
-        return parsed
-    return stray_parsed
+    final = parsed if parsed["outcome"] is not None else stray_parsed
+    if final["outcome"] is not None:
+        _v2_record_end(task_id, final["outcome"])
+    return final
 
 
 def _deny_guard_path() -> Path:
