@@ -54,7 +54,7 @@ class SkillTextTest(unittest.TestCase):
             "/design-review", "/card-review", "design_precheck.py", "process_metrics.py",
             "STATUS:", "DONE_WITH_CONCERNS", "NEEDS_CONTEXT", "BLOCKED", "DESIGN GAP",
             "escape:design", "design-defect", "amendment", "Changes since review", "design-review-r", "task-dir=", "code-review-r<N>.md",
-            "t2-<ID>-ground", "t2-<ID>-dreview<N>", "t2-<ID>-creview<N>", "t2-<ID>-impl",
+            "t2-<ID>-design", "t2-<ID>-dreview<N>", "t2-<ID>-creview<N>", "t2-<ID>-impl",
             "repo-guides/<repo>.md", ".graphify", "~/.local/bin/graphify",
             "plugins/hermes-dev-process/README.md", "code-explorer",
         ]:
@@ -70,17 +70,22 @@ class SkillTextTest(unittest.TestCase):
             ("t2-t_ab12cd34-fix1", None),
             ("t2-t_ab12cd34-design-revise1", None),
             ("t2-t_ab12cd34-design", None),
-            ("t2-t_ab12cd34-ground", None),
         ):
             self.assertEqual(co._review_kind(tid, review_prompt if kind else "Read the brief."), kind, tid)
         for tid, stage in (
-            ("t2-t_ab12cd34-ground", "grounding"),
             ("t2-t_ab12cd34-design", "design"),
             ("t2-t_ab12cd34-design-revise1", "design"),
             ("t2-t_ab12cd34-impl", "implementation"),
             ("t2-t_ab12cd34-fix2", "fix"),
         ):
             self.assertEqual(co._v2_stage(tid, None), stage, tid)
+
+    def test_grounding_is_a_subagent_of_the_design_author(self):
+        self.assertNotIn("-ground", self.text)
+        self.assertNotIn("grounding.md", self.text)
+        self.assertIn("evidence/test-impact.txt", self.text)
+        self.assertIn("as a subagent", self.text)
+        self.assertEqual(_load_plugin()._v2_stage("t2-t_ab12cd34-design", None), "design")
 
     def test_referenced_files_exist(self):
         design = ROOT / "skills" / "shared" / "software-development" / "design"

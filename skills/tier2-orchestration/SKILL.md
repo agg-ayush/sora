@@ -14,8 +14,8 @@ metadata:
 
 Drive ONE issue from a raw task to a human-approved GitHub PR merge on **process
 v2** (spec: `docs/dev-process-v2.md` in the harness repo). You run the stages
-around the `design` skill: set up the card, run the design skill (grounding,
-author, review), get a tests-first implementation from a CLI coding agent in an
+around the `design` skill: set up the card, run the design skill (author with
+grounding, review), get a tests-first implementation from a CLI coding agent in an
 isolated worktree, run the mechanical gates and ONE code-review session, drive
 the fix loop and raise the PR. You coordinate; you never write the design or the
 code yourself. Detail lives elsewhere: design contract and review procedure in
@@ -76,15 +76,15 @@ without it is **legacy** (see "Legacy cards"). All artifacts live outside the re
 |---|---|---|
 | `process.json` | you, Phase 1 | `{"version": 2, "tier": "none\|light\|full", "modules": ["ui","risk"], "kind": "feature\|bugfix\|refactor\|test\|copy\|config", "design_path": "<abs path or null>", "base_commit": "<sha>"}` |
 | `design.md` | design author | starts with a fenced `design-meta: tier=<light\|full> modules=<ui,risk\|none>` block |
-| `evidence/test-impact.txt` | grounding | existing tests that touch the change |
+| `evidence/test-impact.txt` | design author, from grounding | existing tests that touch the change |
 | `evidence/red-<unit>.txt`, `green-<unit>.txt` | implementer | first line is the exact test command, then raw runner output |
 | `review/<agent>-r<round>.md`, `code-review-r<round>.md` | review sessions | agent findings and the merged verdict |
 | `metrics.jsonl` | plugin, you | `{"ts","stage","event":"start\|end\|refused\|amendment","round","detail"}` per line |
 
 Session task ids (the plugin derives stage and review kind from the names; keep
-them): `t2-<ID>-ground`, `-design` (revisions and amendments `-design-revise<N>`),
-`-dreview<N>`, `-impl`, `-fix<N>`, `-creview<N>`. Routes (all seatbelt): grounding
-and implementation and fix round 1 `sonnet`; design author, both review sessions
+them): `t2-<ID>-design` (grounding runs inside it; revisions and amendments `-design-revise<N>`),
+`-dreview<N>`, `-impl`, `-fix<N>`, `-creview<N>`. Routes (all seatbelt):
+implementation and fix round 1 `sonnet`; design author, both review sessions
 and fix rounds 2 and 3 `opus`.
 
 Tiers (set at triage, you may raise, never lower): **none** = no design, tests-first
@@ -133,7 +133,7 @@ services, auth, money, irreversible).
    plugin with a trivial prompt ("reply PONG"), the same `model_provider=seatbelt`
    and the same `model` the step will use, and a short timeout. All steps run
    seatbelt: `opus` for the design author, both review sessions and fix rounds 2
-   and 3; `sonnet` for grounding, implementation and fix round 1. Do NOT probe with
+   and 3; `sonnet` for implementation and fix round 1. Do NOT probe with
    a raw `claude -p` (that checks the TF/Anthropic endpoint, not seatbelt). If the
    probe fails, do NOT fall back to another executor on your own — a switch changes
    the model group and billing route. STOP and get explicit human approval before
@@ -191,7 +191,7 @@ services, auth, money, irreversible).
   the design stages and implement against it (record its path as `design_path`).
 - Target repo `workdir` and `base_branch`; for notifications the Telegram chat id
   when the brief gives one.
-- A scratch dir for grounding, design-author and review sessions (NOT the target
+- A scratch dir for design-author and review sessions (NOT the target
   repo: design touches no repo; no worktree).
 
 ## Procedure
@@ -263,32 +263,33 @@ Design touches no repo: every session below runs in a SCRATCH DIR (no worktree) 
 reads the repo at `<repo-path>` read-only. Pass `kanban_task_id` (+ `kanban_board`)
 on every `start` (principle 2).
 
-**1b.1 Grounding** (`task_id=t2-<ID>-ground`, `model=sonnet`, `effort=medium`).
-Probe the route first (principle 7). Prompt: "Act as the feature-dev `code-explorer`
-agent (launch it as a subagent). Read `<card-dir>/task.md` (binding inputs and context
-pack are in it). Write `<card-dir>/grounding.md`: existing patterns to follow, every
-consumer and call site of anything the card changes (found by grep, each marked
-changing or unchanged) and the existing tests that cover those paths, all as
+**1b.1 Author, with grounding inside the session** (`task_id=t2-<ID>-design`, `model=opus`,
+`effort=high`, `executor=claude`, `model_provider=seatbelt`). Grounding is not a separate
+session: the author runs it first as a subagent, which keeps host load down. Probe the
+route first (principle 7). Prompt: "Step 1, grounding: launch the feature-dev
+`code-explorer` agent as a subagent (Task tool) on `<card-dir>/task.md` (binding inputs and
+context pack are in it) and the repo at `<repo-path>` (read-only). It must return the existing
+patterns to follow, every consumer and call site of anything the card changes (found by grep,
+each marked changing or unchanged) and the existing tests that cover those paths, all as
 `path:line`. Write the test list to `<card-dir>/evidence/test-impact.txt`, one
-`path:line | test name` per line. Set status complete and write DONE to your outcome
-file." Gate: both files exist and contain `path:line` citations; otherwise steer once.
+`path:line | test name` per line, from that output. Step 2: read `<design-skill>/SKILL.md`,
+then `references/design-contract.md` and `references/anti-patterns.md` there, and follow
+them for tier `<tier>`, modules `<modules>`. Inputs: `<card-dir>/task.md`, the grounding
+output, the repo at `<repo-path>` (read-only). Write the design to `<card-dir>/design.md`.
+Set status complete and write DONE to your outcome file." Gate: `evidence/test-impact.txt`
+exists and contains `path:line` citations; otherwise steer once. Then
+`card_state.py set-design <card-dir> <card-dir>/design.md`. RETAIN this session through the
+loop. `wait` (long waits are covered by the auto-heartbeat). Never read the doc body into
+your context.
 
-**1b.2 Author** (`task_id=t2-<ID>-design`, `model=opus`, `effort=high`, `executor=claude`,
-`model_provider=seatbelt`). Prompt: "Read `<design-skill>/SKILL.md`, then `references/design-contract.md` and
-`references/anti-patterns.md` there, and follow them for tier `<tier>`, modules `<modules>`. Inputs: `<card-dir>/task.md`, `<card-dir>/grounding.md`, the repo at
-`<repo-path>` (read-only). Write the design to `<card-dir>/design.md`. Set status complete
-and write DONE to your outcome file." Then `card_state.py set-design <card-dir> <card-dir>/design.md`.
-RETAIN this session through the loop. `wait` (long waits are covered by the
-auto-heartbeat). Never read the doc body into your context.
-
-**1b.3 Pre-check** (no review round spent):
+**1b.2 Pre-check** (no review round spent):
 `python3 <design-skill>/scripts/design_precheck.py <card-dir>/design.md`. Exit 1 prints the
 problems: write them to `<card-dir>/review/precheck-<n>.md`, steer the author ("Read
 `<that file>` and fix every problem in place"), re-run. The plugin runs the same check
 when a review starts and refuses with `precheck_failed` (no round counted); treat that
 refusal like an exit 1. Three failed pre-checks in a row: ESCALATE.
 
-**1b.4 Review: ONE Opus session per round** (`task_id=t2-<ID>-dreview<N>`, `model=opus`,
+**1b.3 Review: ONE Opus session per round** (`task_id=t2-<ID>-dreview<N>`, `model=opus`,
 `effort=medium`, fresh every round). Prompt: `/design-review <card-dir>/design.md
 card=<card-dir>/task.md binding=<card-dir>/task.md guide=<system guide path, if any>
 task-dir=<card-dir> round=<N>`. The command runs the generalist pass itself and the design
@@ -307,19 +308,19 @@ coverage: requirements_testable, grounding_verified, behaviour_model, verificati
 blocking_issues: B1 [HIGH|MED] ...
 nonblocking_suggestions: NB1 ...
 ```
-- `approved: yes` → go to 1b.5. Record any `gaps`, `missing` or `unchecked` coverage field
+- `approved: yes` → go to 1b.4. Record any `gaps`, `missing` or `unchecked` coverage field
   in the kanban comment.
 - `approved: no` → write the blocking issues to `<card-dir>/review/blocking-r<N>.md`. Steer
   the SAME author session (or start `t2-<ID>-design-revise<N>` with the same route if it
   died; at `effort=high` a dead revise retries once at `medium`): "Read `<card-dir>/design.md` and
   `<card-dir>/review/blocking-r<N>.md`. Revise the doc in place, bump `revision`, fix every
   blocking issue and answer every blocking and non-blocking id under `Changes since review`
-  (adopted or rejected with a reason). Set status complete and write DONE." Pre-check (1b.3), then a
+  (adopted or rejected with a reason). Set status complete and write DONE." Pre-check (1b.2), then a
   fresh review round. **At most 3 rounds**; the plugin refuses the 4th (`escalate:true`):
   STOP and ESCALATE with the latest doc and the outstanding blocking issues.
 - A blocking issue that reflects ambiguity in the TASK itself → ESCALATE for clarification.
 
-**1b.5 Close the design.**
+**1b.4 Close the design.**
 1. Every NB must have an answer: `python3 <design-skill>/scripts/design_precheck.py
    <card-dir>/design.md --nb NB1,NB2,...` (the ids from the last verdict). On failure steer the
    author to answer the missing ones and re-run; no new review round. Adopted NBs become
@@ -492,9 +493,9 @@ metric's minutes).
    requirements: added, dropped or reinterpreted) or changes what users or other consumers
    see beyond the design's stated surface is scope-changing: `kanban_block kind=needs_input`
    with the gap and the proposed change, and wait for the owner. Otherwise continue.
-4. Pre-check (1b.3), then ONE amendment review round: a fresh `t2-<ID>-dreview<N>` session
+4. Pre-check (1b.2), then ONE amendment review round: a fresh `t2-<ID>-dreview<N>` session
    running `/design-review <card-dir>/design.md card=... binding=... task-dir=<card-dir>
-   round=<N> amendment=<card-dir>/review/gap-<n>.md` (same other arguments as 1b.4). It counts
+   round=<N> amendment=<card-dir>/review/gap-<n>.md` (same other arguments as 1b.3). It counts
    toward the design-review cap; if the cap is spent, ESCALATE. Not approved after that one
    round → ESCALATE (no second amendment round).
 5. Approved → re-attach the design (`hermes kanban attach`), append the metric
@@ -939,7 +940,7 @@ head are lost when the session ends.
   durable source of truth) until it reads `complete`/`DONE`.
 - **A design author/revise session (`effort=high`) can die silently (exit with no
   outcome) on a revision turn, reproducibly, while the same prompt at
-  `effort=medium` completes cleanly.** Observed twice in one Phase 1b.4 revise
+  `effort=medium` completes cleanly.** Observed twice in one Phase 1b.3 revise
   loop. If a design session dies with no outcome at `effort=high`, retry the SAME
   revision prompt once at `effort=medium` before treating it as a stalled/crashed
   session — an engine switch is approval-gated (principle #7), so the same-route
@@ -948,7 +949,7 @@ head are lost when the session ends.
   `green-*.txt` are raw output of real runs with the exact command on line 1; the plugin
   refuses a code review without them. Steer the implementer to capture a real run; never
   write the file yourself.
-- **Session names are the plugin's classifier.** Use `-ground`, `-design`,
+- **Session names are the plugin's classifier.** Use `-design`,
   `-design-revise<N>`, `-dreview<N>`, `-impl`, `-fix<N>`, `-creview<N>`. A review that is
   not named and prompted as a review is not counted against the 3-round cap, and a fix named
   like a review is.

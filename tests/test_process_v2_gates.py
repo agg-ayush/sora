@@ -353,6 +353,47 @@ class MetricsEventsTest(GateBase):
                                                     "unlabelled": 1, "total": 4, "blocking": 2})
         self.assertGreaterEqual(end["detail"]["minutes"], 0)
 
+    def test_end_event_reads_the_card_review_command_verdict(self):
+        self.make_card()
+        self.good_evidence()
+        (self.card / "code-review-r1.md").write_text(
+            "VERDICT\nconformance: fail\nquality: pass\nfindings:\n"
+            "- F1 [BLOCKING] [conformance] [escape:design] a.py:1 | x | y\n"
+            "- F2 [NONBLOCKING] [quality] [escape:impl] a.py:2 | x | y\n"
+        )
+        self.start("t2-x-creview1", "/card-review /x/design.md card=/x/task.md task-dir=%s round=1" % self.card)
+        self.finish("t2-x-creview1")
+        co._read_outcome("t2-x-creview1")
+        (end,) = [m for m in self.metrics() if m["event"] == "end"]
+        self.assertEqual((end["stage"], end["round"]), ("code_review", 1))
+        self.assertEqual(end["detail"]["findings"]["total"], 2)
+        self.assertEqual(end["detail"]["findings"]["design"], 1)
+        self.assertEqual(end["detail"]["findings"]["blocking"], 1)
+
+    def test_end_event_prefers_prompt_path_over_command_file(self):
+        self.make_card()
+        self.good_evidence()
+        (self.card / "code-review-r1.md").write_text("- F1 [BLOCKING] [tests] [escape:test] a.py:1 | x | y\n")
+        explicit = self.card / "review" / "verdict-r1.md"
+        explicit.parent.mkdir()
+        explicit.write_text("- F1 [BLOCKING] [quality] [escape:impl] a.py:1 | x | y\n- F2 [NONBLOCKING] a.py:2 | x | y\n")
+        self.code_start("t2-x-review-r1", verdict=str(explicit))
+        self.finish("t2-x-review-r1")
+        co._read_outcome("t2-x-review-r1")
+        (end,) = [m for m in self.metrics() if m["event"] == "end"]
+        self.assertEqual(end["detail"]["findings"]["total"], 2)
+
+    def test_design_review_candidate_does_not_record_zero_findings(self):
+        self.make_card()
+        (self.card / "design-review-r1.md").write_text(
+            "VERDICT\napproved: no\nblocking_issues:\n- B1 [HIGH] x | y\nnonblocking_suggestions:\n- NB1 z\n")
+        self.start("t2-x-dreview1", "/design-review %s/design.md task-dir=%s round=1" % (self.card, self.card))
+        self.finish("t2-x-dreview1")
+        co._read_outcome("t2-x-dreview1")
+        (end,) = [m for m in self.metrics() if m["event"] == "end"]
+        self.assertEqual((end["stage"], end["round"]), ("design_review", 1))
+        self.assertNotIn("findings", end["detail"])
+
     def test_end_event_without_verdict_file_has_no_findings(self):
         self.make_card()
         self.good_evidence()
@@ -421,6 +462,15 @@ class VerdictPathTest(unittest.TestCase):
         self.assertEqual(f("Write your verdict to `/tmp/out.md`.", card, 1), Path("/tmp/out.md"))
         self.assertEqual(f("no path here", card, 2), card / "review" / "verdict-r2.md")
         self.assertIsNone(f("no path here", card, None))
+
+    def test_candidates_include_review_command_files(self):
+        card = Path("/c")
+        f = co._v2_verdict_candidates
+        self.assertEqual(f("code", card, 2, None), [card / "code-review-r2.md", card / "review" / "verdict-r2.md"])
+        self.assertEqual(f("design", card, 1, "/p/v.md"),
+                         [Path("/p/v.md"), card / "design-review-r1.md", card / "review" / "verdict-r1.md"])
+        self.assertEqual(f("code", card, None, None), [])
+        self.assertEqual(f(None, card, 1, None), [])
 
 
 class RealPrecheckIntegrationTest(GateBase):

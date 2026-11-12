@@ -643,13 +643,22 @@ def _v2_verdict_path(prompt: str, card: Path, round_: int | None) -> Path | None
     return None
 
 
+def _v2_verdict_candidates(kind: str | None, card: Path, round_: int | None, prompt_path: str | None) -> list[Path]:
+    """Where a review verdict may live: the prompt's path, then the files the review commands write."""
+    out = [Path(prompt_path)] if prompt_path else []
+    if round_ and kind in ("design", "code"):
+        out.append(card / f"{kind}-review-r{round_}.md")
+        out.append(card / "review" / f"verdict-r{round_}.md")
+    return out
+
+
 def _v2_note_started(ctx: dict, task_id: str, kanban_task: str) -> None:
     try:
         kind, card = ctx["kind"], ctx["card"]
         round_ = _v2_review_round(kanban_task, task_id, kind) if kind else None
         side = {"started_at": time.time(), "stage": ctx["stage"], "round": round_, "kind": kind,
                 "card": card.as_posix(), "ended": False}
-        if kind == "code":
+        if kind in ("design", "code"):
             vp = _v2_verdict_path(ctx["prompt"], card, round_)
             side["verdict_path"] = vp.as_posix() if vp else None
         _write_text(_artifact_dir(task_id) / ".metrics.json", json.dumps(side))
@@ -689,13 +698,11 @@ def _v2_record_end(task_id: str, outcome: str) -> None:
         card = Path(side["card"])
         detail: dict = {"task_id": task_id, "outcome": outcome,
                         "minutes": round((time.time() - float(side["started_at"])) / 60, 2)}
-        if side.get("kind") == "code":
-            candidates = [Path(side["verdict_path"])] if side.get("verdict_path") else []
-            if side.get("round"):
-                candidates.append(card / "review" / f"verdict-r{side['round']}.md")
-            for vp in candidates:
+        if side.get("kind") in ("design", "code"):
+            for vp in _v2_verdict_candidates(side["kind"], card, side.get("round"), side.get("verdict_path")):
                 counts = _v2_finding_counts(vp)
-                if counts is not None:
+                # design verdicts use B/NB ids, so only F-id findings are counted for them
+                if counts is not None and (side["kind"] == "code" or counts["total"]):
                     detail["findings"] = counts
                     break
         side["ended"] = True

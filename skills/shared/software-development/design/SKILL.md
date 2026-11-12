@@ -26,7 +26,7 @@ Stages 1 to 4 of the card process: triage, grounding, design, design review, plu
 | # | Stage | Who | Output | Done when |
 |---|---|---|---|---|
 | 1 | Triage | Tier 1 (tier 2 may raise) | `design: none, light or full` plus modules, `process.json` | tier recorded, rules in `references/tiers.md` |
-| 2 | Grounding | Read-only explorer (light and full) | existing patterns, every consumer, covering tests with file:line | consumer list found by grep, test list saved as `evidence/test-impact.txt` |
+| 2 | Grounding | Read-only explorer subagent, launched by the author at the start of its session (light and full) | existing patterns, every consumer, covering tests with file:line | consumer list found by grep, test list saved as `evidence/test-impact.txt` |
 | 3 | Design | Opus author | design doc per `references/design-contract.md` | `scripts/design_precheck.py` prints `ok` |
 | 4 | Design review | `/design-review` (one Opus session) | verdict per `references/review-procedure.md` | `approved: yes`, or 3 rounds used and escalated |
 | 5 | Amendments | Author, then one scoped review | revised design with `Changes since review` | amendment review approved, or escalated if scope changed |
@@ -58,7 +58,7 @@ Tier none skips stages 2 to 4. Light and full run all five; full adds alternativ
 ## Procedure for tier 2
 
 1. Read the tier and modules from the card (tier 1 comment) and write `process.json` (see `references/tiers.md`). Tier none: stop here.
-2. Run grounding. Hand its output to the author. Hand the author `references/design-contract.md` and `references/anti-patterns.md`.
+2. Hand the author `references/design-contract.md` and `references/anti-patterns.md`. The author runs grounding first by launching the explorer as a subagent in its own session (no separate grounding session), saves `evidence/test-impact.txt` from its output, then writes the design.
 3. Author writes `<card dir>/design.md` starting with the `design-meta` block. Run `scripts/design_precheck.py`; loop with the author until `ok`.
 4. Run `/design-review <design.md>` with the inputs listed in `references/review-procedure.md`. Read only the verdict file.
 5. `approved: no`: send the blocking issues to the author, who revises in place, bumps `revision` and answers every id in `Changes since review`. Pre-check again with `--nb <ids from the verdict>`, then a fresh review. `approved: yes`: send the non-blocking answers on to the implementer's brief.
