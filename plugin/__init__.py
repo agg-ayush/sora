@@ -735,6 +735,25 @@ def _start(args: dict) -> dict:
     return result
 
 
+def _seed_graphify(main_repo: Path, worktree: Path) -> None:
+    """Give a new worktree its own copy of the main repo's graph so --update never writes to main.
+
+    Copies only when main has a non-empty .graphify and the worktree has none; a legacy
+    symlink is dropped first. Never creates .graphify in the main repo. Fail-open.
+    """
+    try:
+        src, dst = main_repo / ".graphify", worktree / ".graphify"
+        if dst.is_symlink():
+            dst.unlink()
+        if dst.exists() or not src.is_dir() or not any(src.iterdir()):
+            return
+        shutil.copytree(src, dst, symlinks=False)
+        for name in ("branch.json", "worktree.json", "needs_update"):
+            (dst / name).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _start_session(args: dict) -> dict:
     task_id = str(args.get("task_id") or "").strip()
     prompt = args.get("prompt")
@@ -801,16 +820,7 @@ def _start_session(args: dict) -> dict:
                     "ok": False,
                     "error": (fallback.stderr or fallback.stdout or "git worktree add failed").strip(),
                 }
-        # Share the main repo's .graphify directory across worktrees so T3 sessions
-        # reuse the persistent graph (--update) instead of rebuilding from scratch.
-        try:
-            main_graphify = Path(workdir).resolve() / ".graphify"
-            main_graphify.mkdir(exist_ok=True)
-            wt_graphify = worktree_path / ".graphify"
-            if not wt_graphify.exists() and not wt_graphify.is_symlink():
-                wt_graphify.symlink_to(main_graphify)
-        except OSError:
-            pass
+        _seed_graphify(Path(workdir).resolve(), worktree_path)
         rundir = str(worktree_path)
 
     status_instruction = (
