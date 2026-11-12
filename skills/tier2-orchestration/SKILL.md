@@ -384,36 +384,45 @@ gone, start a new named session in the same workdir.
 1. Read the ledger attachment → first unit with `status:pending`. If none (all
    complete), go to Phase 3. (No ledger yet → derive units from the design's build
    sequence, write the initial ledger, attach it, start at unit 1.)
-2. Fill `references/implementer-brief.md` into `<card-dir>/impl-brief.md` for the unit
-   (design path, test-impact map, context pack, adopted NB criteria). `claude_orchestrate
-   start`: `task_id=t2-<ID>-impl`, `workdir`, `worktree=<name>`, `executor=claude`,
-   `model_provider=seatbelt`, `model=sonnet` (route comes from env, no `--model`
-   flag), `kanban_task_id=<kanban task>` (+ `kanban_board=<slug>`). `prompt` = the
-   error-journal block (`python3 ~/.hermes/scripts/error-journal.py inject claude`, skip
-   when empty) followed by "Read `<card-dir>/impl-brief.md` and follow it for unit `<id>`."
-   Keep the `task_id` lowercase; it is the tmux session name, separate from the kanban
-   task id. The kanban claim is independent of the executor: if an engine switch is
-   approved (principle 7) change the route only, never release/re-claim.
+2. **Worktree first, then the session.** The red-before-green hook must be in place before
+   the implementer's first edit, and `start` creates its worktree only as the session
+   begins, so create the worktree yourself and start the session inside it:
+   ```bash
+   WT=<workdir parent>/.orchestrate-worktrees/<name>     # the path start would use
+   git -C <workdir> worktree add "$WT" -b <name> <base_commit>   # stacked: the stack base
+   ```
+   Then, before `start`:
+   1. Red gate hook: for cards with `kind` feature or bugfix at tier light or full, and
+      bugfix at tier none (not refactor, test, copy or config), write the hook into
+      `$WT/.claude/settings.local.json` with the steps in "TDD enforcement" of
+      `plugins/hermes-dev-process/README.md` (harness repo; merge into an existing file).
+      Delete the file when implementation ends, before the review session.
+   2. Graphify seed, only when the main repo has a `.graphify/` graph (it is not
+      committed, so the worktree has none):
+   ```bash
+   MAIN_REPO=<the repo workdir>  # NOT the worktree path
+   GRAPHIFY=$(command -v graphify || echo ~/.local/bin/graphify)
+   if [ -d "$MAIN_REPO/.graphify" ] && [ ! -d "$WT/.graphify" ] && [ -x "$GRAPHIFY" ]; then
+     cp -R "$MAIN_REPO/.graphify" "$WT/.graphify"
+     rm -f "$WT/.graphify/branch.json" "$WT/.graphify/worktree.json" "$WT/.graphify/needs_update"
+     (cd "$WT" && "$GRAPHIFY" update . --no-description --no-label --no-cluster >/dev/null 2>&1)
+   fi
+   ```
+      This is a cheap copy plus incremental reconcile (seconds, no API cost), not a cold
+      build. Skip silently when there is no graph. Do not block the unit on it.
+   3. Fill `references/implementer-brief.md` into `<card-dir>/impl-brief.md` for the unit
+      (design path, test-impact map, context pack, adopted NB criteria).
+   4. `claude_orchestrate start`: `task_id=t2-<ID>-impl`, `workdir=$WT` (no `worktree`
+      argument), `executor=claude`, `model_provider=seatbelt`, `model=sonnet` (route
+      comes from env, no `--model` flag), `kanban_task_id=<kanban task>` (+
+      `kanban_board=<slug>`). `prompt` = the error-journal block (`python3
+      ~/.hermes/scripts/error-journal.py inject claude`, skip when empty) followed by "Read
+      `<card-dir>/impl-brief.md` and follow it for unit `<id>`." Keep the `task_id`
+      lowercase; it is the tmux session name, separate from the kanban task id. The kanban
+      claim is independent of the executor: if an engine switch is approved (principle 7)
+      change the route only, never release/re-claim.
    - **Model route is prescribed, not chosen.** Launch exactly this route. If it is
      unavailable, STOP and get explicit human approval before rerouting.
-   - **Per-worktree setup, once, right after `start` returns and the worktree exists:**
-     1. Red-before-green hook: enable it with the per-worktree steps in
-        `plugins/hermes-dev-process/README.md` (harness repo); skip when that README says
-        the hook is not adopted.
-     2. Graphify seed, only when the main repo has a `.graphify/` graph (the worktree
-        starts with none; it is not committed):
-     ```bash
-     MAIN_REPO=<the repo workdir>  # NOT the worktree path
-     WT=<the new worktree path>    # the path start reports
-     GRAPHIFY=$(command -v graphify || echo ~/.local/bin/graphify)
-     if [ -d "$MAIN_REPO/.graphify" ] && [ ! -d "$WT/.graphify" ] && [ -x "$GRAPHIFY" ]; then
-       cp -R "$MAIN_REPO/.graphify" "$WT/.graphify"
-       rm -f "$WT/.graphify/branch.json" "$WT/.graphify/worktree.json" "$WT/.graphify/needs_update"
-       (cd "$WT" && "$GRAPHIFY" update . --no-description --no-label --no-cluster >/dev/null 2>&1)
-     fi
-     ```
-     This is a cheap copy plus incremental reconcile (seconds, no API cost), not a cold
-     build. Skip silently when there is no graph. Do not block the unit on it.
 3. `claude_orchestrate wait` for the session; the plugin auto-heartbeats the claim
    inside `wait` (principle 2). Heavy runs are the implementer's targeted tests only;
    the full suite and browser suite wait for the gate.
@@ -565,7 +574,8 @@ step with the real model executor, read the produced artifact and judge whether 
 output is SENSIBLE against the task's intent (not only schema-valid), then feed it
 through the downstream logic. This is additional to 3.2 and 3.3.
 
-**3.3 Code review: ONE Opus session.** Compute the review base: `git merge-base
+**3.3 Code review: ONE Opus session.** Delete the red gate hook file from the worktree first.
+Compute the review base: `git merge-base
 origin/<parent-branch> HEAD` (on a stacked branch the parent is the previous stack
 branch, not trunk), so the range covers only this PR's own commits.
 `claude_orchestrate start`: `task_id=t2-<ID>-creview<N>` (N = round, 1 first), fresh
@@ -612,9 +622,10 @@ mutation probe as parallel subagents, writes each agent's findings to
 For each round that has BLOCKING findings:
 1. Write them (all, once) to `<card-dir>/review/accepted-r<N>.md`. One fix session for ALL
    findings, never one per finding.
-2. Fix session: round 1 steers the original implementer (the retained `-impl` session;
-   if gone, start `t2-<ID>-fix1`, `sonnet`, same worktree and branch). Rounds 2 and 3 start
-   `t2-<ID>-fix<N>` on `opus`. Prepend the error-journal block. Prompt: "Read `<card-dir>/impl-brief.md`
+2. Move the previous `evidence/red-*.txt` and `green-*.txt` into `evidence/r<N>/` and put the
+   red gate hook back (README "TDD enforcement", step 4). Fix session: round 1 steers the
+   original implementer (the retained `-impl` session; if gone, start `t2-<ID>-fix1`,
+   `sonnet`, `workdir=$WT`). Rounds 2 and 3 start `t2-<ID>-fix<N>` on `opus`, same `workdir`. Prepend the error-journal block. Prompt: "Read `<card-dir>/impl-brief.md`
    Fix protocol section and `<card-dir>/review/accepted-r<N>.md`, and follow them." Every fix starts
    with a RED test that reproduces its finding (`evidence/red-fix<N>-<F#>.txt`), then the fix
    (`green-fix<N>-<F#>.txt`). Confirm the fix diff contains test changes; if not, steer.
@@ -797,8 +808,8 @@ minimal rework directly (read_file/patch) against the rejection's own spec.
 3. Close the measurement: `card_state.py metric <card-dir> merge end --detail
    '{"pr":<N>,"review_rounds":<n>,"parked":<n>}'`. Then prune the card's scratch and large
    logs (avoid unbounded growth) but KEEP `process.json`, `metrics.jsonl`, `design.md` and
-   `review/` (`scripts/process_metrics.py` reads them). Only remove worktrees this run
-   created.
+   `review/` (`scripts/process_metrics.py` reads them). Remove only worktrees this run
+   created (`git -C <workdir> worktree remove $WT` after the merge lands).
 4. Escape analysis: when a code-review finding labelled `escape:design` traces to a wrong or
    missing entry in the system guide, record it as a linked kanban task naming the guide
    entry and the file:line that disproves it (see "Recording discovered work"); do not edit

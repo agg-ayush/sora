@@ -25,17 +25,18 @@ consumer lists by grep.
 
 1. **Tests first.** Write or change the tests the design's verification table assigns to this
    unit. Run them on the unchanged code and save the failing run to
-   `<card-dir>/evidence/red-<unit-id>.txt` with the capture snippet in
-   `plugins/hermes-dev-process/README.md` (harness repo): first line is the exact test
-   command, then the raw runner output. The run must fail for the right reason: the new
+   `<card-dir>/evidence/red-<unit-id>.txt` with `capture-evidence.sh`, used as shown under
+   "Evidence capture for the implementer" in `plugins/hermes-dev-process/README.md` (harness
+   repo): first line is the exact test command, then the raw runner output. The run must fail for the right reason: the new
    behaviour is absent, not a syntax, import or setup error. Edit no source file before
    this file exists.
 2. **Immutable tests.** Once RED is saved, do not edit, skip or delete those tests or
    weaken an assertion. Existing assertions that the change legitimately alters are changed
    in step 1, each listed with its reason under `Changed assertions` in `result.md`. A test
    that cannot be satisfied or looks wrong is a design gap: stop (see Escalation).
-3. **Implement** until the tests pass. Save the passing run of the same command to
-   `<card-dir>/evidence/green-<unit-id>.txt` (same format). Commit the unit.
+3. **Implement** until the tests pass. Save the passing run to
+   `<card-dir>/evidence/green-<unit-id>.txt` the same way (the green command also runs the
+   tests in `test-impact.txt`). Commit the unit.
 4. **Run rules.** Iterate with the targeted tests and the tests in `test-impact.txt`.
    Do not run the full suite or the whole browser suite: the supervisor runs them at the
    gate. A UI card may run one targeted browser spec at a time. A flaky failure gets its
