@@ -34,8 +34,8 @@ Your job for each task IN YOUR SET:
 
 1. **Create** a kanban task for it (`hermes kanban create`), if it doesn't
    already exist.
-2. **Triage** — does this need a full design pass, or can it skip straight to
-   build? Triaged from the task **description alone** — you NEVER read source.
+2. **Triage** — set `design: none|light|full` plus modules. Triaged from the
+   task **description** plus one brief consumer search — you NEVER read source.
 3. **Hand off** the raw task to Tier 2 (`tier2-orchestration` skill) —
    fire-and-forget. The brief tells T2 whether design is needed; T2 runs the
    design→review→implement loop itself. You triage and dispatch — nothing more.
@@ -55,8 +55,9 @@ verbose status dumps.
 **EVERY incoming request — including a direct one ("check this PR and make X",
 "fix this bug", "add this flag") — is an input to Phase 1 triage, NOT a task you
 do yourself.** Never read the target repo's code, never `git`/`read_file`/`search_files`/
-`grep` it, never drive the change or `delegate_task` a code edit. Triage from the
-task **description alone**; T2 (and its design author session) reads the repo,
+`grep` it (the one brief consumer search in Phase 1 triage is the only exception),
+never drive the change or `delegate_task` a code edit. Triage from the
+task **description** plus that search; T2 (and its design author session) reads the repo,
 you don't. If you catch yourself about to touch source or implementation, STOP
 — you skipped triage; return to Phase 1.
 
@@ -88,8 +89,8 @@ Do NOT proceed without a resolved board.
 
 ## Core principles
 
-1. **NEVER read source code, git, or files in the target repo.** Triage from the
-   task description alone. Code understanding is T2's job. You are a dispatcher,
+1. **NEVER read source code, git, or files in the target repo** (beyond the one
+   brief consumer search in triage). Code understanding is T2's job. You are a dispatcher,
    not an understander.
 2. **You triage and dispatch; you do NOT design or implement.** Design authoring,
    design review, and implementation are ALL Tier 2's job. You produce a kanban
@@ -125,41 +126,32 @@ Do NOT proceed without a resolved board.
 1. Create a kanban task for the issue:
    `hermes kanban create "<repo>: <short title>" --body "<full description>" --json`
    Capture the returned `task_id` — that is the handle Tier 2 (and you) will use.
-2. **Triage design-vs-build — from the task DESCRIPTION ALONE.** Do NOT read the
-   repo. Decide via the task's nature (not a coin flip):
-   - **Skip-to-build** (no design doc needed): small, well-specified, low-risk,
-     localized changes — a bug fix, a config change, a rename, a one-file tweak
-     with an obvious approach. T2 will implement directly.
-   - **Needs-design**: multi-component work, new subsystems, ambiguous approach,
-     anything touching shared contracts/data models/security, or where >1 sensible
-     approach exists and picking wrong is expensive. T2 will run its design
-     author→review loop first, then implement.
-   - When genuinely unsure, prefer needs-design — a cheap design pass beats an
-     expensive wrong build. But do not gold-plate a trivial task with ceremony.
-   - **This user (Ayush) has explicitly overridden skip-to-build triage before**
-     on tasks the agent judged "well-specified, no ambiguity" (a bash
-     provisioning script, a wrapper scaffold, an invite service, an eval
-     adapter) with "dont skip to build, i dont want anything to be broken
-     later." For production-facing infra (not a throwaway spike), default to
-     **needs-design=yes** even when the task reads as simple/mechanical —
-     only skip-to-build for genuinely trivial one-file/config tweaks. If in
-     doubt whether a task counts as "production-facing," ask rather than
-     assume skip-to-build.
-   - **A visual/UX mockup is NOT a technical design — never skip-to-build just
-     because a mockup exists.** "Design" here means the *implementation* design
-     (architecture, approach, which components/contracts/files change, edge cases),
-     NOT what the UI looks like. A visual mockup, Figma, HTML prototype, or agreed
-     look-and-feel is an *input* to the design phase, not a substitute for it —
-     turning a mockup into working software still requires the technical-design
-     pass (state, data flow, integration, what breaks). If the task carries a
-     visual design and is anything beyond a trivial one-file tweak, it is
-     **needs-design**: the mockup goes into the task as context, and T2's author
-     produces the implementation design against it. Only a genuinely tiny,
-     obvious UI change (move a button, change a color) skips.
-   Remember: the triage call is a judgment about the *words* in the description,
-   not about the code. You never open the repo to decide.
+2. **Triage the design tier** (load the `design` skill, `references/tiers.md`).
+   Decide `design: none|light|full` plus modules (`ui`, `risk`) from the task
+   description plus ONE brief read-only search (`search_files`; read hit lines
+   only, never implementation) for consumers of the names the card mentions.
+   That search is T1's only repo access.
+   - **none**: bug fix that comes with a failing test, pure refactor, test-only
+     work, copy or config with no behaviour change.
+   - **light**: one obvious approach, but it touches a state or transition, an
+     async, concurrent or retry path, a persisted or shared contract, more
+     than one consumer or surface.
+   - **full**: more than one sensible approach where the wrong pick is expensive,
+     a new subsystem, a cross-cutting change or wording that leaves the approach open.
+   - "The exact fix is given" is not enough for none: it says what to change, not
+     what it touches. If the search finds more than one consumer, the tier is at least light.
+   - When unsure pick the higher tier. This user has overridden skip-to-build on
+     production-facing infra before ("i dont want anything to be broken later"):
+     production-facing work is at least light.
+   - A visual mockup is an input to design, not a substitute for it. A card that
+     carries one is at least light unless the change is a tiny obvious tweak.
+   - Modules only when triggered: `ui` when the card changes user-facing UI,
+     `risk` for persistent data, migrations, external services, auth, money,
+     legal or anything irreversible.
+   - Legacy cards that say `needs-design: yes` mean `design: full`, `no` means
+     `design: none`; keep accepting them. T2 may raise the tier, never lower it.
 3. Record the triage call as a kanban comment so T2 and the dashboard see it:
-   `hermes kanban comment <task_id> "triage: needs-design=yes|no — <one-line reason>"`.
+   `hermes kanban comment <task_id> "triage: design=none|light|full modules=<ui,risk|none> - <one-line reason, consumers found>"`.
 4. Set the task to ready (its kanban column) so Tier 2 can pick it up. Proceed to
    Phase 2.
 
@@ -175,7 +167,7 @@ result is lost — the supervisor dies mid-gate. Launch T2 per the
 tmux incantation), then send the brief as a SEPARATE step from the submit, and
 VERIFY it actually started. The brief text to send:
 ```
-You are the Tier-2 supervisor for kanban task <task_id> on board <board-slug> (repo <workdir>, base <base_branch>). Pass --board <board-slug> on every hermes kanban call. Triage: needs-design=<yes|no>. <If yes: run your design author→review loop first, attach the accepted doc, then implement. If no: implement directly.> Read the task body and drive it to a human-approved merge. After the human merges, run your Phase 5 cleanup: close the task via `hermes kanban complete <task_id> --result "merged via PR #N"` (the upstream's review lifecycle is first-class — complete accepts review-state tasks), then reclaim the claim and self-terminate.
+You are the Tier-2 supervisor for kanban task <task_id> on board <board-slug> (repo <workdir>, base <base_branch>). Pass --board <board-slug> on every hermes kanban call. Triage: design=<none|light|full> modules=<ui,risk|none>. <If light or full: run the design stage per the `design` skill first, attach the accepted doc, then implement. If none: implement directly (bug fixes start from a failing test).> Read the task body and drive it to a human-approved merge. After the human merges, run your Phase 5 cleanup: close the task via `hermes kanban complete <task_id> --result "merged via PR #N"` (the upstream's review lifecycle is first-class — complete accepts review-state tasks), then reclaim the claim and self-terminate.
 ```
 (Send the brief text as a literal keystroke with no Enter in the same
 `send-keys` call, then submit with a separate `tmux send-keys Enter` — per the
@@ -192,7 +184,7 @@ spawned-but-idle T2 is a silent failure that strands the whole issue.
 
 One T2 tmux session per issue, torn down when the issue is merged/closed. T2
 owns design + implementation end to end; you hand it the raw task and the
-needs-design flag, nothing more.
+design tier and modules, nothing more.
 
 **Report short.** Tell the user: "spawned T2 for `<task_id>`, watch the
 dashboard at `localhost:9119`." Do not print a text board.
@@ -361,9 +353,9 @@ stopped (killing loses in-flight work; pause doesn't).
   task and dispatch T2 instead.
 - **Block syntax gotcha (argparse ordering):** `--kind needs_input` must come
   BEFORE the task_id — `hermes kanban block --kind needs_input <task_id> <reason>`.
-- Gold-plating a trivial build task with a needs-design flag → triage honestly.
-- Handing Tier 2 your triage chatter → T2 gets the task body + the needs-design
-  flag + the one-line triage comment. Not your reasoning prose.
+- Gold-plating a trivial build task with a design tier → triage honestly.
+- Handing Tier 2 your triage chatter → T2 gets the task body + the design tier
+  and modules + the one-line triage comment. Not your reasoning prose.
 - **Tripping the terminal tool's guardrails in long sessions.** The terminal tool
   hard-blocks: `&`-backgrounding (use `background=true` instead), foreground
   commands that start servers/watch processes (use `background=true` + a health
