@@ -1,0 +1,8 @@
+{
+  "name": "hermes-dev-process",
+  "description": "Design-led dev process agents and commands: design review, card review, conformance and mutation checks",
+  "author": {
+    "name": "Hermes setup"
+  },
+  "license": "MIT"
+}

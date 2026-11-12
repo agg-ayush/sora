@@ -1,0 +1,14 @@
+{
+  "name": "hermes-setup",
+  "owner": {
+    "name": "Hermes setup"
+  },
+  "description": "Local Claude Code plugins maintained in this repo",
+  "plugins": [
+    {
+      "name": "hermes-dev-process",
+      "source": "./plugins/hermes-dev-process",
+      "description": "Design-led dev process agents and commands: design review, card review, conformance and mutation checks"
+    }
+  ]
+}

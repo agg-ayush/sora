@@ -322,7 +322,9 @@ chmod +x "$HERMES_HOME/scripts/"*.sh "$HERMES_HOME/scripts/t3-stop-gate.py" 2>/d
 log "syncing agent-hooks -> $HERMES_HOME/agent-hooks/"
 cp "$REPO_DIR/scripts/subagent-ledger-hook.py" "$HERMES_HOME/agent-hooks/subagent-ledger.py"
 cp "$REPO_DIR/scripts/aws-token-refresh-hook.sh" "$HERMES_HOME/agent-hooks/aws-token-refresh.sh"
-chmod +x "$HERMES_HOME/agent-hooks/subagent-ledger.py" "$HERMES_HOME/agent-hooks/aws-token-refresh.sh"
+cp "$REPO_DIR/scripts/red-gate-hook.py" "$HERMES_HOME/agent-hooks/red-gate.py"
+cp "$REPO_DIR/scripts/capture-evidence.sh" "$HERMES_HOME/agent-hooks/capture-evidence.sh"
+chmod +x "$HERMES_HOME/agent-hooks/subagent-ledger.py" "$HERMES_HOME/agent-hooks/aws-token-refresh.sh" "$HERMES_HOME/agent-hooks/red-gate.py" "$HERMES_HOME/agent-hooks/capture-evidence.sh"
 
 # 5. synapse-mem Hermes provider activation, only from an up-to-date main checkout
 SMEM_REPO="${SMEM_REPO:-$HOME/repos/synapse-mem}"
@@ -351,6 +353,48 @@ for d in "$CLAUDE_HOME/plugins/cache/claude-plugins-official/pr-review-toolkit/"
     cp "$REPO_DIR/plugins/pr-review-toolkit/commands/review-pr.md" "$d/commands/"
   fi
 done
+
+# hermes-dev-process: agents and commands for the design-led dev process. This repo is registered
+# as a local directory marketplace (hermes-setup); directory plugins are read in place, so repo
+# edits apply at the next Claude Code session start. Installing at user scope enables it in
+# ~/.claude/settings.json; the block below mirrors it into the seatbelt settings.
+install_dev_process_plugin() {
+  local mp="hermes-setup" id="hermes-dev-process@hermes-setup" registered state
+  if ! command -v claude >/dev/null 2>&1; then
+    log "claude CLI not found; skipping hermes-dev-process plugin"
+    return 0
+  fi
+  [ -f "$REPO_DIR/.claude-plugin/marketplace.json" ] || return 0
+  registered="$(claude plugin marketplace list --json 2>/dev/null | python3 -c '
+import json, sys
+for m in json.load(sys.stdin):
+    if m.get("name") == "hermes-setup":
+        print(m.get("path", ""))
+' 2>/dev/null || true)"
+  if [ "$registered" = "$REPO_DIR" ]; then
+    claude plugin marketplace update "$mp" >/dev/null
+  else
+    if [ -n "$registered" ]; then
+      log "re-registering $mp marketplace ($registered -> $REPO_DIR)"
+      claude plugin marketplace remove "$mp" >/dev/null || true
+    fi
+    claude plugin marketplace add "$REPO_DIR" >/dev/null
+  fi
+  state="$(claude plugin list --json 2>/dev/null | python3 -c '
+import json, sys
+state = "missing"
+for p in json.load(sys.stdin):
+    if p.get("id") == "hermes-dev-process@hermes-setup":
+        state = "enabled" if p.get("enabled") else "disabled"
+print(state)
+' 2>/dev/null || echo missing)"
+  case "$state" in
+    enabled) log "$id already installed and enabled" ;;
+    disabled) log "enabling $id"; claude plugin enable "$id" >/dev/null ;;
+    *) log "installing $id"; claude plugin install "$id" >/dev/null ;;
+  esac
+}
+install_dev_process_plugin || log "WARNING: hermes-dev-process plugin install failed; run: claude plugin marketplace add $REPO_DIR && claude plugin install hermes-dev-process@hermes-setup"
 
 # Enable all installed Claude Code plugins in seatbelt settings.json
 if [ -f "$CLAUDE_HOME/plugins/installed_plugins.json" ]; then
