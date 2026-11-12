@@ -49,7 +49,7 @@ Tier none skips stages 2 to 4. Light and full run all five; full adds alternativ
 3. Name decisions, not code. A design longer than the code it describes has written the code instead.
 4. Every requirement and every behaviour transition has a verification row naming the wrong implementation it must catch.
 5. Run the pre-check before asking for review. A pre-check failure goes back to the author and does not use a review round.
-6. Reviewers get the card text, binding inputs (standing decisions and files the task names), the design, the system guide and the tools. They never get previous verdicts or the author's reasoning outside the doc.
+6. Reviewers get the card text, binding inputs (standing decisions and files the task names), the design and the tools. They do not get the system guide. They never get previous verdicts or the author's reasoning outside the doc.
 7. At most 3 design review rounds per card. Unresolved after the third: escalate with the latest doc and the open blockers.
 8. Every non-blocking suggestion gets a written answer in `Changes since review` (adopted or rejected with a reason). Adopted ones become acceptance criteria in the implementation brief.
 9. Tier may be raised, never lowered. NEEDS_CONTEXT or BLOCKED from the implementer because the task is bigger than designed re-tiers the card.

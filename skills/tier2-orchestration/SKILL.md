@@ -291,8 +291,8 @@ refusal like an exit 1. Three failed pre-checks in a row: ESCALATE.
 
 **1b.3 Review: ONE Opus session per round** (`task_id=t2-<ID>-dreview<N>`, `model=opus`,
 `effort=medium`, fresh every round). Prompt: `/design-review <card-dir>/design.md
-card=<card-dir>/task.md binding=<card-dir>/task.md guide=<system guide path, if any>
-task-dir=<card-dir> round=<N>`. The command runs the generalist pass itself and the design
+card=<card-dir>/task.md binding=<card-dir>/task.md
+task-dir=<card-dir> round=<N>` (no system guide: design reviewers do not get it; authors, implementers and code reviewers do). The command runs the generalist pass itself and the design
 agents as parallel subagents (the tier sets which), writes agent findings to
 `<card-dir>/review/<agent>-r<N>.md` and the merged verdict to
 `<card-dir>/design-review-r<N>.md`. Do not give the reviewer earlier verdicts or the

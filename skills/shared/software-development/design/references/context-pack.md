@@ -7,11 +7,11 @@ Every session starts from a context pack instead of rediscovering the repo, with
 | Role | Gets | Does not get |
 |---|---|---|
 | Design author | Card, grounding output, system guide, graph and symbol tools | n/a |
-| Design reviewers (generalist and subagents) | Card, design doc, binding inputs, system guide, graph and symbol tools | Previous review verdicts. The author's reasoning outside the doc |
+| Design reviewers (generalist and subagents) | Card, design doc, binding inputs, graph and symbol tools | The system guide (measured: no coverage gain for design review, about 60% more wall time). Previous review verdicts. The author's reasoning outside the doc |
 | Implementer | Approved design, test-impact map, system guide, graph and symbol tools | Review transcripts |
 | Code reviewers | Diff, design, verification table, system guide, graph and symbol tools | The implementer's own notes on why it is right |
 
-Binding inputs (the task, standing decisions and files the task names) go to every role in full.
+Binding inputs (the task, standing decisions and files the task names) go to every role in full. Code reviewers keep the system guide (unmeasured).
 
 ## Pieces
 
@@ -36,4 +36,4 @@ The CLI may print a version-mismatch warning on stderr; ignore it. If `graphify-
 2. Consumer and call-site lists are confirmed by grep. Graphs miss string references such as selectors, copy, test files and dynamic imports, which is where missed consumers hide.
 3. Reviewers write their own list of likely failure modes from the card and the code before reading the design's rationale, so the design does not set their frame.
 4. A guide or graph older than the card's base commit (`process.json` `base_commit`) is flagged stale. Stale entries are re-verified, not trusted.
-5. The pack stays only if coverage holds: before wide rollout the trial card is rerun with and without the pack and compared on coverage, minutes and tokens.
+5. The pack stays only if coverage holds: it was rerun with and without the guide for design review and dropped there. Re-measure before adding it back.

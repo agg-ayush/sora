@@ -1,7 +1,7 @@
 ---
 description: "One code review session: conformance against the design, quality agents and a mutation probe run as parallel subagents; writes the two-verdict file"
 argument-hint: "<design-path|none> [range=<base>..<head>] [task_dir=<dir>] [round=<n>] [tier=<none|light|full>] [table=<path>] [brief=<path>] [repo=<path>]"
-allowed-tools: ["Task", "Bash", "Read", "Write", "Glob", "Grep"]
+allowed-tools: ["Agent", "Task", "Bash", "Read", "Write", "Glob", "Grep"]
 ---
 
 # Card review
@@ -31,7 +31,7 @@ Then:
 
 ## 2. Launch reviewers in parallel
 
-Send every Task call below in one message so they run concurrently. Use `subagent_type` with the plugin prefix (`hermes-dev-process:conformance-reviewer`, `pr-review-toolkit:code-reviewer`); if a prefixed name is rejected use the bare name.
+Send every Agent call below (the tool is `Agent` in current Claude Code and `Task` in older versions) in one message so they run concurrently. Use `subagent_type` with the plugin prefix (`hermes-dev-process:conformance-reviewer`, `pr-review-toolkit:code-reviewer`); if a prefixed name is rejected use the bare name.
 
 | Agent | Launch when | Role |
 |---|---|---|
@@ -72,6 +72,7 @@ Build one finding list:
 5. Spot-check every BLOCKING finding: read the cited file:line yourself. If the claim does not hold, drop it (`dropped: unverified`) or downgrade it to NONBLOCKING with `unverified` in the failure text.
 6. Assign the category for the verdict: findings in `conformance`, `tests` and `design-defect` decide the conformance verdict; findings in `quality` decide the quality verdict. Assign a missing escape label from the evidence: `escape:design` when the design was silent or wrong, `escape:impl` when the code departs from clear design text, `escape:test` for missing or weak tests, quality bugs the design could not have prevented are `escape:impl`. Do not emit `escape:noise`; noise is dropped.
 7. Renumber F1, F2 and so on, BLOCKING first.
+8. Lose nothing. Every missing test, untested transition or surviving mutant any agent named goes to `required_tests:`, one line each with its source agent. Every agent finding that is not in the findings list (past the 10 NONBLOCKING cap, or folded away without a duplicate) goes to `other_findings:`, one line each with severity and source file. Findings dropped as `unsupported` or `approach` are only counted. Use O and T ids, never F ids.
 
 ## 5. Write the verdict
 
@@ -88,6 +89,12 @@ AGENTS
 - <agent>: ok|failed|skipped (<reason>) | <blocking>/<nonblocking> | review/<agent>-r<round>.md
 dropped: unsupported=<n> approach=<n> unverified=<n> duplicates=<n>
 mutation: run=<n> killed=<n> survived=<n>
+
+required_tests:
+- T1 <test or transition that must have a test> (source: <agent>)
+other_findings:
+- O1 [BLOCKING|NONBLOCKING] <one line> (source: review/<file>.md)
+note: full agent findings are in review/*.md. The author must address every required_tests line and read the agent files.
 ```
 
 Rules: `conformance: fail` when any BLOCKING finding has category conformance, tests or design-defect; `quality: fail` when any BLOCKING finding has category quality; otherwise pass. With no findings write `findings:` followed by `- none`. A BLOCKING `design-defect` finding means the caller routes to the design amendment path, never to an ad hoc fix; say so in its required-fix field.

@@ -105,6 +105,9 @@ if [ -d "$REPO_DIR/skills/shared" ]; then
     fi
     ln -s "$src" "$dest"
   done < <(find "$REPO_DIR/skills/shared" -name SKILL.md -type f)
+  if [ ! -f "$HERMES_HOME/skills/software-development/design/SKILL.md" ]; then
+    log "WARNING: $HERMES_HOME/skills/software-development/design does not resolve; /design-review falls back to the repo path"
+  fi
 fi
 if [ "${HERMES_SKILLS_ONLY:-false}" = true ]; then
   log "shared skills linked (skills-only mode)"

@@ -7,7 +7,6 @@ One review round is one Opus session (`/design-review`). The parent session does
 - design path (the `design-meta` block gives tier and modules)
 - card text path
 - binding inputs: the task, standing decisions and every file the task names. Every reviewer and every subagent gets them in full. A review without them produces false blockers.
-- system guide path (and the commit it records)
 - task directory and round number
 
 Never open previous verdicts or review files from other rounds. The `Changes since review` section inside the design is part of the design and may be read.
@@ -38,7 +37,7 @@ Do the steps in order.
 1. Read each agent's file at `<task-dir>/review/<agent>-r<round>.md`.
 2. Group findings by design section. Findings with the same root cause become one finding with the strongest evidence and the sources noted (generalist, lens, bundle).
 3. Re-verify any HIGH finding that came only from a subagent and carries no file:line you have read. Downgrade it to `unverified` if you cannot reproduce it.
-4. Apply the cap of 7 blocking. Renumber B1, B2 and NB1, NB2.
+4. Apply the cap of 7 blocking. Renumber B1, B2 and NB1, NB2. Card-rule or process conflicts (test scope, cleanup rules, tooling instructions) go to `card_rule_conflicts:` outside the cap. Every missing test or untested transition any agent named goes to `required_tests:` with its source agent. Every agent finding not merged into blocking or non-blocking goes to `other_findings:` with severity and source file. Nothing an agent found is dropped.
 5. If an agent failed or returned no file, rerun it once. If it fails again, set the matching coverage fields to `unchecked` and note which agent is missing.
 
 ## Verdict
@@ -60,7 +59,16 @@ blocking_issues:
 - B1 [HIGH|MED] <issue, location, required correction>
 nonblocking_suggestions:
 - NB1 <suggestion>
+
+card_rule_conflicts:
+- C1 <conflict, card text it breaks, required change>
+required_tests:
+- T1 <test or transition that must have a test> (source: <agent>)
+other_findings:
+- O1 [HIGH|MED|LOW] <one line> (source: review/<file>.md)
 ```
+
+A header line `note:` under `VERDICT` states that full agent findings are in `review/*.md` and that the author must address `required_tests` and read the agent files. The three lists follow the block; `- none` when empty. They never use F ids.
 
 `approved: yes` only when there are no blocking issues. Write `- none` for an empty list.
 
@@ -82,7 +90,7 @@ Field meaning:
 
 When the implementer reports a design gap, the author amends the affected sections and bumps `revision`. The review is one round, scoped to what changed.
 
-- Inputs: the amended design, the gap payload (section, claim, observed reality), the card and binding inputs, the system guide. Not previous verdicts.
+- Inputs: the amended design, the gap payload (section, claim, observed reality), the card and binding inputs. Not the system guide and not previous verdicts.
 - Review the changed sections and any section that cites them (consumer rows, verification rows, behaviour transitions).
 - Check that the amendment fixes the reported gap against the observed reality, that frozen intent is untouched (otherwise stop and escalate to the owner), that the verification table gained rows for the new behaviour and that `Changes since review` is complete.
 - Same verdict format. Unchanged sections are not re-opened unless the change invalidates them.
