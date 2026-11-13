@@ -21,7 +21,7 @@ hosts/      per-host profiles (mac, sora): host-only scripts, systemd/launchd un
 Run the idempotent setup script (`devbox/setup-hermes.sh`) — it installs sidelined tools (`ruff`, `oxlint`, `smem`), wires the `claude-orchestrate` and `synapse-mem` plugins, syncs all tier skills, scripts, and agent-hooks (`subagent-ledger.py`, `aws-token-refresh.sh`, `t3-stop-gate.py`), symlinks `~/.hermes/claude-seatbelt-config` (`CLAUDE.md`, `skills/`, `plugins/`) to `~/.claude` with all plugins enabled, patches `pr-review-toolkit`, and sets global gitignore (`.serena/`, `.ui-flow/`):
 
 ```bash
-git clone git@github.com:agg-ayush/hermes-setup.git ~/hermes-setup
+git clone https://github.com/agg-ayush/sora.git ~/hermes-setup
 bash ~/hermes-setup/devbox/setup-hermes.sh
 ```
 
