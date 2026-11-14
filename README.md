@@ -13,7 +13,7 @@ scripts/    orphan-reaper.py (self-healing watchdog) + hermes-hygiene.py (weekly
 docs/       hermes-tiers-reference.md (canonical architecture) + audit.md
 config/     config.yaml.template (current routing, regenerated from the live Mac config), env.template, zshrc-snippet.sh, watchdog launchd/systemd units (NO secrets)
 patches/    local Hermes source patches applied by setup-hermes.sh
-hosts/      per-host profiles (mac, sora): host-only scripts, systemd/launchd units, cron-jobs.json, watchdog.json, plugins.txt, config-overrides.yaml
+hosts/      per-host profiles (mac, sora, wsl): host-only scripts, systemd/launchd units, cron-jobs.json, watchdog.json, plugins.txt, config-overrides.yaml
 ```
 
 ## Install / Sync (Mac or Ubuntu EC2 `sora`)
@@ -33,7 +33,49 @@ What `devbox/setup-hermes.sh` sets up:
 5. **Claude Code seatbelt sync:** Symlinks `~/.hermes/claude-seatbelt-config/{CLAUDE.md,skills,plugins}` → `~/.claude/`, copies the `state-transition-reviewer` specialist into `pr-review-toolkit`, and enables all installed plugins in seatbelt's `settings.json`.
 6. **Global gitignore:** Adds `.serena/`, `.ui-flow/`, and `**/.claude/settings.local.json`.
 
-## Host profiles (`hosts/<mac|sora>/`)
+## Install on Windows (WSL2)
+
+Sora runs entirely inside a WSL2 Linux distro; nothing is installed on the Windows side.
+
+**Prerequisites:** WSL2 with an Ubuntu distro already set up (`wsl --install -d Ubuntu` from Windows), and a
+shell open inside it as your normal user. Clone into the Linux home directory, not under `/mnt/c/`.
+
+```bash
+git clone https://github.com/agg-ayush/sora.git ~/hermes-setup && bash ~/hermes-setup/devbox/bootstrap-wsl.sh
+```
+
+`devbox/bootstrap-wsl.sh` is idempotent (re-run it at any time; `--dry-run` shows what it would do) and installs
+only what is missing:
+
+1. **apt packages** via `sudo apt-get` (it lists them first): `git`, `curl`, `ca-certificates`, `tmux`, `python3`,
+   `python3-venv`, `jq`.
+2. **uv** (Astral installer), **Node.js LTS** via nvm, **Hermes Agent** (official installer, non-interactive) and
+   **Claude Code** (native installer), all under your home directory. Windows copies of these tools that WSL
+   exposes from `/mnt/c/...` are ignored.
+3. **`devbox/setup-hermes.sh`**, which selects the `wsl` host profile automatically.
+
+Afterwards open a new terminal, run `claude` once to sign in, and run `hermes setup` to choose a model provider
+(keys go in `~/.hermes/.env`). If `wslu` is installed, `BROWSER` defaults to `wslview` so login pages open in the
+Windows browser; a `BROWSER` you set yourself is kept.
+
+**systemd:** with systemd enabled in the distro, the watchdog timer and other user units are installed as on
+Linux. Without it, units are skipped and setup continues. To enable it, add this to `/etc/wsl.conf`, run
+`wsl --shutdown` from Windows, reopen the distro and re-run `devbox/setup-hermes.sh`:
+
+```ini
+[boot]
+systemd=true
+```
+
+**Gateway:** the `wsl` profile does not install the Hermes gateway service by default, and Hermes cron jobs only
+run while a gateway is running. Opt in with `HERMES_INSTALL_GATEWAY=true bash ~/hermes-setup/devbox/setup-hermes.sh`.
+Without systemd the gateway falls back to running under `nohup` and stops when its WSL session closes.
+
+**`/mnt/c` checkouts:** a clone on the Windows filesystem is slow and loses Linux file permissions; the scripts
+warn about it. Clone into `~` instead. `.gitattributes` forces LF line endings, so a clone made by Windows git
+with `core.autocrlf=true` still runs.
+
+## Host profiles (`hosts/<mac|sora|wsl>/`)
 
 Everything that exists on only one machine lives in a profile; `setup-hermes.sh` (step 9, `devbox/host-profile.sh`)
 installs it **only when absent** — it never overwrites, restarts, enables or disables anything that exists.
@@ -47,9 +89,9 @@ installs it **only when absent** — it never overwrites, restarts, enables or d
 | plugins | `plugins.txt` (`name [identifier]`) | missing from `hermes plugins list` |
 | `watchdog.json` | profile root | missing |
 | config keys | `config-overrides.yaml` | only when `config.yaml` was created from the template in the same run |
-| gateway service | not copied; `hermes gateway install --if-missing` | no gateway service installed (never on a Mac that has a Telegram token) |
+| gateway service | not copied; `hermes gateway install --if-missing` | no gateway service installed (never on a Mac that has a Telegram token; on `wsl` only with `HERMES_INSTALL_GATEWAY=true`) |
 
-Profile = `mac` on Darwin, `sora` on Linux; override with `HERMES_HOST_PROFILE=<name>`; skip with `HERMES_SKIP_HOST_PROFILE=true`.
+Profile = `mac` on Darwin, `wsl` under WSL (detected from the kernel release or `WSL_DISTRO_NAME`), `sora` on other Linux; override with `HERMES_HOST_PROFILE=<name>`; skip with `HERMES_SKIP_HOST_PROFILE=true`.
 No chat ids or secrets are stored: scripts read `TELEGRAM_HOME_CHANNEL` / `TI_CONCERN_TELEGRAM_CHAT`
 from `~/.hermes/.env` (names in `config/env.template`). Repo copies of sora scripts are parameterized, so they differ from the live
 files only in hardcoded paths, chat ids and the tracker doc id. `tests/test_host_profiles.py` enforces this.
