@@ -104,6 +104,11 @@ class DetectionTest(_SandboxCase):
         sb = self.sandbox(kernel="Darwin", osrelease=WSL2_OSRELEASE)
         self.assertEqual(self.profile(sb, {"WSL_DISTRO_NAME": "Ubuntu"}), "mac")
 
+    def test_wsl_markers_on_darwin_are_not_wsl(self):
+        sb = self.sandbox(kernel="Darwin", osrelease=WSL2_OSRELEASE)
+        r = sb.run(f'. "{_PLATFORM}"; hermes_is_wsl && echo yes || echo no', {"WSL_DISTRO_NAME": "Ubuntu"})
+        self.assertEqual(r.stdout.strip(), "no")
+
     def test_override_wins_everywhere(self):
         self.assertEqual(self.profile(self.sandbox(osrelease=WSL2_OSRELEASE), {"HERMES_HOST_PROFILE": "sora"}), "sora")
         self.assertEqual(self.profile(self.sandbox(), {"HERMES_HOST_PROFILE": "wsl"}), "wsl")
