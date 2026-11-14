@@ -1,0 +1,28 @@
+# LF everywhere so a Windows clone with core.autocrlf=true still runs inside WSL.
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.bash text eol=lf
+*.py text eol=lf
+*.mjs text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.csv text eol=lf
+*.template text eol=lf
+*.example text eol=lf
+*.service text eol=lf
+*.timer text eol=lf
+*.plist text eol=lf
+*.patch text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+*.png binary
+*.ttf binary
+*.mp3 binary
