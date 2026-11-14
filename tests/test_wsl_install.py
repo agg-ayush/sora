@@ -4,6 +4,8 @@ Shell code runs under a fake `uname` and stub tools in a scratch HOME, so nothin
 machine, network or service manager.
 """
 
+from __future__ import annotations
+
 import json
 import os
 import shutil
