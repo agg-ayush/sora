@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Installs Sora inside a WSL2 Ubuntu distro: apt prerequisites, uv, Node LTS, Hermes Agent and
 # Claude Code when missing, then runs devbox/setup-hermes.sh. Idempotent; safe to re-run.
-#   --dry-run   report what would be installed and the host profile; change nothing
+#   --dry-run   report what would be installed and the host profile; change nothing. Exits 0 when
+#               nothing is missing and 2 when a package or tool would be installed.
 set -euo pipefail
 
 log() { echo "[bootstrap-wsl] $*"; }
@@ -15,7 +16,7 @@ DRY_RUN=false
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=true ;;
-    -h|--help) sed -n '2,4p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,5p' "$0"; exit 0 ;;
     *) die "unknown argument: $arg" ;;
   esac
 done
@@ -30,6 +31,7 @@ hermes_is_wsl || die "not running inside WSL; on macOS or plain Linux run devbox
 [ "$(id -u)" -ne 0 ] || die "run as your normal WSL user, not root; sudo is used only for apt-get"
 
 RERUN="re-run: bash $(printf '%q' "$REPO_DIR/devbox/bootstrap-wsl.sh")"
+CHANGES=false
 
 # WSL interop appends Windows PATH entries; a Windows binary under /mnt/<drive>/ does not count.
 have() {
@@ -104,6 +106,7 @@ ensure() {
     log "$what present"
     return 0
   fi
+  CHANGES=true
   if [ "$DRY_RUN" = true ]; then
     log "(dry run) would install $what"
     return 0
@@ -129,6 +132,7 @@ done < <(missing_packages)
 if [ "${#missing[@]}" -eq 0 ]; then
   log "apt packages present: ${APT_PACKAGES[*]}"
 else
+  CHANGES=true
   log "will install with sudo apt-get: ${missing[*]}"
   if [ "$DRY_RUN" = true ]; then
     log "(dry run) apt-get not run"
@@ -159,6 +163,7 @@ ensure "Claude Code" install_claude have claude
 log "host profile: $(hermes_host_profile)"
 if [ "$DRY_RUN" = true ]; then
   log "(dry run) would run devbox/setup-hermes.sh"
+  [ "$CHANGES" = true ] && exit 2
   exit 0
 fi
 
