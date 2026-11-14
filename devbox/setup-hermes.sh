@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Idempotent setup & sync script for the Hermes + Claude Code tier orchestration stack.
-# Works on both macOS and Ubuntu EC2 (sora) — safe to re-run at any time.
+# Works on macOS, Ubuntu EC2 (sora) and Ubuntu under WSL2 — safe to re-run at any time.
 set -euo pipefail
 
 log() { echo "[setup-hermes] $*"; }
@@ -11,6 +11,8 @@ CLAUDE_HOME="$HOME/.claude"
 SEATBELT_DIR="$HERMES_HOME/claude-seatbelt-config"
 IS_MAC=false
 [ "$(uname -s)" = "Darwin" ] && IS_MAC=true
+# shellcheck source=devbox/platform.sh
+. "$REPO_DIR/devbox/platform.sh"
 
 export PATH="$HOME/.local/bin:$PATH"
 
@@ -112,6 +114,10 @@ fi
 if [ "${HERMES_SKILLS_ONLY:-false}" = true ]; then
   log "shared skills linked (skills-only mode)"
   exit 0
+fi
+
+if hermes_is_wsl && [ "${HERMES_WSL_PREFLIGHT_DONE:-false}" != true ]; then
+  hermes_wsl_preflight "$REPO_DIR" persist
 fi
 
 # 1. Core directory structure
@@ -256,34 +262,6 @@ if command -v hermes >/dev/null 2>&1; then
     log "creating hermes-hygiene cron (0 4 * * 0, local delivery)"
     hermes cron create "0 4 * * 0" --name hermes-hygiene --script hermes-hygiene.py --no-agent --deliver local \
       || log "WARNING: hermes-hygiene cron creation failed"
-  fi
-fi
-
-# 3e. Watchdog scheduler (every 30 min). Install only if absent; never overwrite an existing unit.
-# watchdog.py itself is synced in step 4; its config (scripts/watchdog.json) is host-specific and not managed here.
-if [ "$IS_MAC" = true ]; then
-  WD_PLIST="$HOME/Library/LaunchAgents/ai.hermes.watchdog.plist"
-  if [ -f "$WD_PLIST" ]; then
-    log "watchdog launchd agent already installed"
-  elif [ -f "$REPO_DIR/config/ai.hermes.watchdog.plist" ]; then
-    mkdir -p "$HOME/Library/LaunchAgents" "$HERMES_HOME/logs"
-    sed "s|/Users/ayush|$HOME|g" "$REPO_DIR/config/ai.hermes.watchdog.plist" > "$WD_PLIST"
-    log "installed watchdog launchd agent"
-    launchctl bootstrap "gui/$(id -u)" "$WD_PLIST" 2>/dev/null || log "note: load the watchdog with: launchctl bootstrap gui/$(id -u) $WD_PLIST"
-  fi
-elif command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
-  WD_DIR="$HOME/.config/systemd/user"
-  if [ -f "$WD_DIR/hermes-watchdog.timer" ] && [ -f "$WD_DIR/hermes-watchdog.service" ]; then
-    log "watchdog systemd timer already installed"
-  elif [ -f "$REPO_DIR/config/hermes-watchdog.timer" ]; then
-    mkdir -p "$WD_DIR"
-    for u in hermes-watchdog.service hermes-watchdog.timer; do
-      [ -f "$WD_DIR/$u" ] || cp "$REPO_DIR/config/$u" "$WD_DIR/$u"
-    done
-    systemctl --user daemon-reload
-    systemctl --user enable --now hermes-watchdog.timer \
-      && log "installed watchdog systemd timer" \
-      || log "WARNING: could not enable hermes-watchdog.timer"
   fi
 fi
 
@@ -452,11 +430,48 @@ if [ ! -f "$HERMES_HOME/.env" ]; then
   log "copied env.template -> $HERMES_HOME/.env (fill in secrets)"
 fi
 
-# 9. Host profile (hosts/<mac|sora>/): host-only scripts, units, cron jobs, plugins, watchdog.json and, only
+# 9. Host profile (hosts/<mac|sora|wsl>/): host-only scripts, units, cron jobs, plugins, watchdog.json and, only
 # when config.yaml was freshly created above, per-host config overrides. Install-if-absent only; see
 # devbox/host-profile.sh. Skipped in the Claude-only/skills-only modes (they exit earlier) and with
-# HERMES_SKIP_HOST_PROFILE=true. HERMES_HOST_PROFILE=<name> overrides the mac/sora auto-selection.
+# HERMES_SKIP_HOST_PROFILE=true. HERMES_HOST_PROFILE=<name> overrides the mac/sora/wsl auto-selection.
+host_rc=0
 REPO_DIR="$REPO_DIR" HERMES_HOME="$HERMES_HOME" FRESH_CONFIG="$FRESH_CONFIG" \
-  bash "$REPO_DIR/devbox/host-profile.sh" || log "WARNING: host profile step failed; continuing"
+  bash "$REPO_DIR/devbox/host-profile.sh" || host_rc=$?
+if [ "$host_rc" -eq 3 ]; then
+  log "finished WITH ERRORS: the gateway requested with HERMES_INSTALL_GATEWAY=true is not installed (see the ERROR block above)."
+  exit 3
+fi
+[ "$host_rc" -eq 0 ] || log "WARNING: host profile step failed; continuing"
+
+# 10. Watchdog scheduler (every 30 min). Runs after the host profile, which is what installs a wsl gateway.
+# Install only if absent; never overwrite an existing unit.
+# watchdog.py itself is synced in step 4; its config (scripts/watchdog.json) is host-specific and not managed here.
+if ! hermes_wants_watchdog; then
+  log "watchdog timer not installed: on wsl it is installed with the gateway, which it reports on"
+elif [ "$IS_MAC" = true ]; then
+  WD_PLIST="$HOME/Library/LaunchAgents/ai.hermes.watchdog.plist"
+  if [ -f "$WD_PLIST" ]; then
+    log "watchdog launchd agent already installed"
+  elif [ -f "$REPO_DIR/config/ai.hermes.watchdog.plist" ]; then
+    mkdir -p "$HOME/Library/LaunchAgents" "$HERMES_HOME/logs"
+    sed "s|/Users/ayush|$HOME|g" "$REPO_DIR/config/ai.hermes.watchdog.plist" > "$WD_PLIST"
+    log "installed watchdog launchd agent"
+    launchctl bootstrap "gui/$(id -u)" "$WD_PLIST" 2>/dev/null || log "note: load the watchdog with: launchctl bootstrap gui/$(id -u) $WD_PLIST"
+  fi
+elif command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+  WD_DIR="$HOME/.config/systemd/user"
+  if [ -f "$WD_DIR/hermes-watchdog.timer" ] && [ -f "$WD_DIR/hermes-watchdog.service" ]; then
+    log "watchdog systemd timer already installed"
+  elif [ -f "$REPO_DIR/config/hermes-watchdog.timer" ]; then
+    mkdir -p "$WD_DIR"
+    for u in hermes-watchdog.service hermes-watchdog.timer; do
+      [ -f "$WD_DIR/$u" ] || cp "$REPO_DIR/config/$u" "$WD_DIR/$u"
+    done
+    systemctl --user daemon-reload
+    systemctl --user enable --now hermes-watchdog.timer \
+      && log "installed watchdog systemd timer" \
+      || log "WARNING: could not enable hermes-watchdog.timer"
+  fi
+fi
 
 log "done — setup and sideloaded tools verified."
