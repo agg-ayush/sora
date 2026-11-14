@@ -1,0 +1,31 @@
+{
+  "_comment": "Hermes cron jobs for a personal Windows laptop running WSL2. Created only if absent; all output stays local. They fire only while a Hermes gateway runs (opt in with HERMES_INSTALL_GATEWAY=true).",
+  "host": "wsl",
+  "jobs": [
+    {
+      "name": "orphan-reaper",
+      "schedule": "*/30 * * * *",
+      "script": "orphan-reaper.py",
+      "no_agent": true,
+      "prompt": "Silent watchdog: reap idle/orphaned tier tmux sessions and release stuck Paperclip checkouts. Output only when it acts.",
+      "deliver": "local",
+      "enabled": true
+    },
+    {
+      "name": "hermes-hygiene",
+      "schedule": "0 4 * * 0",
+      "script": "hermes-hygiene.py",
+      "no_agent": true,
+      "deliver": "local",
+      "enabled": true
+    },
+    {
+      "name": "auth-canary",
+      "schedule": "every 15m",
+      "script": "auth-canary.py",
+      "no_agent": true,
+      "deliver": "local",
+      "enabled": true
+    }
+  ]
+}

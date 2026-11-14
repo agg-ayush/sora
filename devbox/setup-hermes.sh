@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Idempotent setup & sync script for the Hermes + Claude Code tier orchestration stack.
-# Works on both macOS and Ubuntu EC2 (sora) — safe to re-run at any time.
+# Works on macOS, Ubuntu EC2 (sora) and Ubuntu under WSL2 — safe to re-run at any time.
 set -euo pipefail
 
 log() { echo "[setup-hermes] $*"; }
@@ -11,6 +11,8 @@ CLAUDE_HOME="$HOME/.claude"
 SEATBELT_DIR="$HERMES_HOME/claude-seatbelt-config"
 IS_MAC=false
 [ "$(uname -s)" = "Darwin" ] && IS_MAC=true
+# shellcheck source=devbox/platform.sh
+. "$REPO_DIR/devbox/platform.sh"
 
 export PATH="$HOME/.local/bin:$PATH"
 
@@ -112,6 +114,10 @@ fi
 if [ "${HERMES_SKILLS_ONLY:-false}" = true ]; then
   log "shared skills linked (skills-only mode)"
   exit 0
+fi
+
+if hermes_is_wsl && [ "${HERMES_WSL_PREFLIGHT_DONE:-false}" != true ]; then
+  hermes_wsl_preflight "$REPO_DIR" persist
 fi
 
 # 1. Core directory structure
@@ -452,10 +458,10 @@ if [ ! -f "$HERMES_HOME/.env" ]; then
   log "copied env.template -> $HERMES_HOME/.env (fill in secrets)"
 fi
 
-# 9. Host profile (hosts/<mac|sora>/): host-only scripts, units, cron jobs, plugins, watchdog.json and, only
+# 9. Host profile (hosts/<mac|sora|wsl>/): host-only scripts, units, cron jobs, plugins, watchdog.json and, only
 # when config.yaml was freshly created above, per-host config overrides. Install-if-absent only; see
 # devbox/host-profile.sh. Skipped in the Claude-only/skills-only modes (they exit earlier) and with
-# HERMES_SKIP_HOST_PROFILE=true. HERMES_HOST_PROFILE=<name> overrides the mac/sora auto-selection.
+# HERMES_SKIP_HOST_PROFILE=true. HERMES_HOST_PROFILE=<name> overrides the mac/sora/wsl auto-selection.
 REPO_DIR="$REPO_DIR" HERMES_HOME="$HERMES_HOME" FRESH_CONFIG="$FRESH_CONFIG" \
   bash "$REPO_DIR/devbox/host-profile.sh" || log "WARNING: host profile step failed; continuing"
 

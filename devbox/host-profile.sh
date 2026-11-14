@@ -4,7 +4,8 @@
 #
 # Inputs (exported by setup-hermes.sh, or set by hand for a dry run on a scratch HOME):
 #   REPO_DIR, HERMES_HOME, FRESH_CONFIG=true (config.yaml was created from the template in this run)
-#   HERMES_HOST_PROFILE   profile dir under hosts/ (default: mac on Darwin, sora on Linux)
+#   HERMES_HOST_PROFILE   profile dir under hosts/ (default: mac on Darwin, wsl under WSL, sora on other Linux)
+#   HERMES_INSTALL_GATEWAY=true installs the gateway service on the wsl profile (off by default)
 #   HERMES_SKIP_HOST_PROFILE=true skips everything
 set -euo pipefail
 
@@ -19,13 +20,9 @@ if [ "${HERMES_SKIP_HOST_PROFILE:-false}" = true ]; then
   log "skipped (HERMES_SKIP_HOST_PROFILE=true)"
   exit 0
 fi
-if [ -n "${HERMES_HOST_PROFILE:-}" ]; then
-  HOST_PROFILE="$HERMES_HOST_PROFILE"
-elif [ "$(uname -s)" = "Darwin" ]; then
-  HOST_PROFILE=mac
-else
-  HOST_PROFILE=sora
-fi
+# shellcheck source=devbox/platform.sh
+. "$REPO_DIR/devbox/platform.sh"
+HOST_PROFILE="$(hermes_host_profile)"
 PROFILE_DIR="$REPO_DIR/hosts/$HOST_PROFILE"
 if [ ! -d "$PROFILE_DIR" ]; then
   log "no hosts/$HOST_PROFILE profile in the repo; skipping host step"
@@ -82,7 +79,7 @@ if [ -f "$PROFILE_DIR/watchdog.json" ]; then
   if [ -e "$HERMES_HOME/scripts/watchdog.json" ]; then
     log "watchdog.json already present"
   else
-    cp "$PROFILE_DIR/watchdog.json" "$HERMES_HOME/scripts/watchdog.json"
+    sed "s|__REPO_DIR__|$REPO_DIR|g" "$PROFILE_DIR/watchdog.json" > "$HERMES_HOME/scripts/watchdog.json"
     log "installed watchdog.json"
   fi
 fi
@@ -183,11 +180,17 @@ if [ -e "$HOME/Library/LaunchAgents/ai.hermes.gateway.plist" ] \
 fi
 if [ "$gateway_installed" = true ]; then
   log "gateway service already installed"
+elif [ "$HOST_PROFILE" = wsl ] && [ "${HERMES_INSTALL_GATEWAY:-false}" != true ]; then
+  log "gateway service not installed on wsl (Hermes cron jobs run only while a gateway runs);"
+  log "  opt in with: HERMES_INSTALL_GATEWAY=true bash $REPO_DIR/devbox/setup-hermes.sh"
 elif ! command -v hermes >/dev/null 2>&1; then
   log "hermes CLI not on PATH; gateway service not installed"
 elif [ "$HOST_PROFILE" = mac ] && grep -Eq '^TELEGRAM_BOT_TOKEN=.+' "$HERMES_HOME/.env" 2>/dev/null; then
   log "WARNING: Mac has TELEGRAM_BOT_TOKEN set; not installing the gateway (Mac must not poll Telegram)"
 else
+  if [ "$HOST_PROFILE" = wsl ] && ! hermes_has_user_systemd; then
+    log "WARNING: no systemd in this WSL distro; the gateway will stop when its WSL session closes"
+  fi
   log "no gateway service found; running 'hermes gateway install --if-missing'"
   hermes gateway install --if-missing || log "WARNING: hermes gateway install failed"
 fi
