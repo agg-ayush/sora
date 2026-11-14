@@ -33,9 +33,10 @@ hermes_is_wsl || die "not running inside WSL; on macOS or plain Linux run devbox
 have() {
   local p
   p="$(command -v "$1" 2>/dev/null)" || return 1
-  case "$p" in
-    /mnt/*) log "ignoring Windows $1 at $p"; return 1 ;;
-  esac
+  if hermes_on_windows_drive "$p"; then
+    log "ignoring Windows $1 at $p"
+    return 1
+  fi
 }
 
 load_nvm() {
