@@ -43,10 +43,16 @@ have() {
 
 load_nvm() {
   [ -s "$NVM_DIR/nvm.sh" ] || return 0
+  local rc=0
   set +eu
   # shellcheck source=/dev/null
   . "$NVM_DIR/nvm.sh"
+  rc=$?
   set -eu
+  if ! command -v nvm >/dev/null 2>&1; then
+    die "loading $NVM_DIR/nvm.sh failed (exit $rc) and defined no nvm command; repair or remove $NVM_DIR, then $RERUN"
+  fi
+  [ "$rc" -eq 0 ] || log "warning: $NVM_DIR/nvm.sh exited $rc while loading (often a default alias naming an uninstalled node)"
 }
 
 node_ok() {
@@ -58,14 +64,29 @@ node_ok() {
 
 install_uv() { curl -LsSf https://astral.sh/uv/install.sh | sh; }
 
+major_of() { local v="${1#v}"; echo "${v%%.*}"; }
+
+# Keeps an nvm default that already meets the floor, else points it at the newest installed node that
+# does, and installs LTS only when none does.
 install_node() {
   if [ ! -s "$NVM_DIR/nvm.sh" ]; then
     curl -fsSL "https://raw.githubusercontent.com/nvm-sh/nvm/$NVM_VERSION/install.sh" | bash || return 1
   fi
   load_nvm
+  local current best rc
   set +eu
-  nvm install --lts && nvm alias default 'lts/*'
-  local rc=$?
+  current="$(nvm version default 2>/dev/null)"
+  best="$(nvm ls --no-colors --no-alias 2>/dev/null | grep -Eo 'v[0-9]+\.[0-9]+\.[0-9]+' | sort -V | tail -n 1)"
+  if [ "$(major_of "$current")" -ge "$NODE_MIN_MAJOR" ] 2>/dev/null; then
+    log "keeping the nvm default node $current"
+    nvm use default >/dev/null
+  elif [ "$(major_of "$best")" -ge "$NODE_MIN_MAJOR" ] 2>/dev/null; then
+    log "pointing the nvm default at the installed node $best (was: ${current:-none})"
+    nvm alias default "$best" && nvm use default >/dev/null
+  else
+    nvm install --lts && nvm alias default 'lts/*'
+  fi
+  rc=$?
   set -eu
   return "$rc"
 }
