@@ -78,9 +78,13 @@ fi
 if [ -f "$PROFILE_DIR/watchdog.json" ]; then
   if [ -e "$HERMES_HOME/scripts/watchdog.json" ]; then
     log "watchdog.json already present"
-  else
-    sed "s|__REPO_DIR__|$REPO_DIR|g" "$PROFILE_DIR/watchdog.json" > "$HERMES_HOME/scripts/watchdog.json"
+    if [ "$HOST_PROFILE" = wsl ]; then
+      "$PY" "$HELPER" watchdog-check "$HERMES_HOME/scripts/watchdog.json" || true
+    fi
+  elif "$PY" "$HELPER" watchdog "$PROFILE_DIR/watchdog.json" "$HERMES_HOME/scripts/watchdog.json" "$REPO_DIR"; then
     log "installed watchdog.json"
+  else
+    log "WARNING: watchdog.json not installed"
   fi
 fi
 
