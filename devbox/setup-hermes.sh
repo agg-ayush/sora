@@ -267,7 +267,9 @@ fi
 
 # 3e. Watchdog scheduler (every 30 min). Install only if absent; never overwrite an existing unit.
 # watchdog.py itself is synced in step 4; its config (scripts/watchdog.json) is host-specific and not managed here.
-if [ "$IS_MAC" = true ]; then
+if ! hermes_wants_watchdog; then
+  log "watchdog timer not installed: on wsl it is installed with the gateway, which it reports on"
+elif [ "$IS_MAC" = true ]; then
   WD_PLIST="$HOME/Library/LaunchAgents/ai.hermes.watchdog.plist"
   if [ -f "$WD_PLIST" ]; then
     log "watchdog launchd agent already installed"
