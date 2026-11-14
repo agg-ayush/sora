@@ -44,23 +44,24 @@ shell open inside it as your normal user. Clone into the Linux home directory, n
 git clone https://github.com/agg-ayush/sora.git ~/hermes-setup && bash ~/hermes-setup/devbox/bootstrap-wsl.sh
 ```
 
-`devbox/bootstrap-wsl.sh` is idempotent (re-run it at any time; `--dry-run` shows what it would do) and installs
-only what is missing:
+`devbox/bootstrap-wsl.sh` is idempotent (re-run it at any time; `--dry-run` shows what it would do and exits 2
+when something would be installed, 0 when nothing is missing) and installs only what is missing:
 
 1. **apt packages** via `sudo apt-get` (it lists them first): `git`, `curl`, `ca-certificates`, `tmux`, `python3`,
-   `python3-venv`, `jq`.
+   `python3-venv`, `jq`, `wslu`.
 2. **uv** (Astral installer), **Node.js LTS** via nvm, **Hermes Agent** (official installer, non-interactive) and
    **Claude Code** (native installer), all under your home directory. Windows copies of these tools that WSL
-   exposes from `/mnt/c/...` are ignored.
+   exposes from `/mnt/c/...` are ignored. An nvm default that is already Node 18 or newer is kept.
 3. **`devbox/setup-hermes.sh`**, which selects the `wsl` host profile automatically.
 
 Afterwards open a new terminal, run `claude` once to sign in, and run `hermes setup` to choose a model provider
-(keys go in `~/.hermes/.env`). If `wslu` is installed, `BROWSER` defaults to `wslview` so login pages open in the
-Windows browser; a `BROWSER` you set yourself is kept.
+(keys go in `~/.hermes/.env`). `BROWSER` defaults to `wslview` (from `wslu`) so login pages open in the Windows
+browser; a `BROWSER` you set yourself is kept. If a step fails, the bootstrap stops with an error that says what to
+fix and how to re-run.
 
-**systemd:** with systemd enabled in the distro, the watchdog timer and other user units are installed as on
-Linux. Without it, units are skipped and setup continues. To enable it, add this to `/etc/wsl.conf`, run
-`wsl --shutdown` from Windows, reopen the distro and re-run `devbox/setup-hermes.sh`:
+**systemd:** with systemd enabled in the distro, user units are installed as on Linux. Without it, units are
+skipped and setup continues. To enable it, add this to `/etc/wsl.conf`, run `wsl --shutdown` from Windows, reopen
+the distro and re-run `devbox/setup-hermes.sh` (with `HERMES_INSTALL_GATEWAY=true` if you want the gateway):
 
 ```ini
 [boot]
@@ -69,7 +70,10 @@ systemd=true
 
 **Gateway:** the `wsl` profile does not install the Hermes gateway service by default, and Hermes cron jobs only
 run while a gateway is running. Opt in with `HERMES_INSTALL_GATEWAY=true bash ~/hermes-setup/devbox/setup-hermes.sh`.
-Without systemd the gateway falls back to running under `nohup` and stops when its WSL session closes.
+The watchdog timer, which reports on the gateway, is installed only together with it. If the opt-in fails, setup
+prints an error block with the re-run command and exits 3. Without systemd the gateway falls back to running under
+`nohup` and stops when its WSL session closes. A gateway unit installed before systemd was turned on is not enabled
+automatically; setup prints the `systemctl --user enable --now hermes-gateway.service` command to run.
 
 **`/mnt/c` checkouts:** a clone on the Windows filesystem is slow and loses Linux file permissions; the scripts
 warn about it. Clone into `~` instead. `.gitattributes` forces LF line endings, so a clone made by Windows git
@@ -87,7 +91,7 @@ installs it **only when absent** — it never overwrites, restarts, enables or d
 | systemd / launchd units | `systemd/`, `launchd/` (`reference/` = not installed) | unit file missing; only newly installed units are enabled/started. A leading `# requires: <path>` line gates a unit on that path. |
 | cron jobs | `cron-jobs.json` | no job with that name (recorded enabled/paused state kept) |
 | plugins | `plugins.txt` (`name [identifier]`) | missing from `hermes plugins list` |
-| `watchdog.json` | profile root | missing |
+| `watchdog.json` | profile root | missing (on `wsl`, an existing one that alerts via Telegram gets a warning) |
 | config keys | `config-overrides.yaml` | only when `config.yaml` was created from the template in the same run |
 | gateway service | not copied; `hermes gateway install --if-missing` | no gateway service installed (never on a Mac that has a Telegram token; on `wsl` only with `HERMES_INSTALL_GATEWAY=true`) |
 
