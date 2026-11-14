@@ -265,36 +265,6 @@ if command -v hermes >/dev/null 2>&1; then
   fi
 fi
 
-# 3e. Watchdog scheduler (every 30 min). Install only if absent; never overwrite an existing unit.
-# watchdog.py itself is synced in step 4; its config (scripts/watchdog.json) is host-specific and not managed here.
-if ! hermes_wants_watchdog; then
-  log "watchdog timer not installed: on wsl it is installed with the gateway, which it reports on"
-elif [ "$IS_MAC" = true ]; then
-  WD_PLIST="$HOME/Library/LaunchAgents/ai.hermes.watchdog.plist"
-  if [ -f "$WD_PLIST" ]; then
-    log "watchdog launchd agent already installed"
-  elif [ -f "$REPO_DIR/config/ai.hermes.watchdog.plist" ]; then
-    mkdir -p "$HOME/Library/LaunchAgents" "$HERMES_HOME/logs"
-    sed "s|/Users/ayush|$HOME|g" "$REPO_DIR/config/ai.hermes.watchdog.plist" > "$WD_PLIST"
-    log "installed watchdog launchd agent"
-    launchctl bootstrap "gui/$(id -u)" "$WD_PLIST" 2>/dev/null || log "note: load the watchdog with: launchctl bootstrap gui/$(id -u) $WD_PLIST"
-  fi
-elif command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
-  WD_DIR="$HOME/.config/systemd/user"
-  if [ -f "$WD_DIR/hermes-watchdog.timer" ] && [ -f "$WD_DIR/hermes-watchdog.service" ]; then
-    log "watchdog systemd timer already installed"
-  elif [ -f "$REPO_DIR/config/hermes-watchdog.timer" ]; then
-    mkdir -p "$WD_DIR"
-    for u in hermes-watchdog.service hermes-watchdog.timer; do
-      [ -f "$WD_DIR/$u" ] || cp "$REPO_DIR/config/$u" "$WD_DIR/$u"
-    done
-    systemctl --user daemon-reload
-    systemctl --user enable --now hermes-watchdog.timer \
-      && log "installed watchdog systemd timer" \
-      || log "WARNING: could not enable hermes-watchdog.timer"
-  fi
-fi
-
 # 4. Hermes scripts + hooks (copied so watchdog check_script_drift sees exact byte parity)
 log "syncing scripts -> $HERMES_HOME/scripts/"
 COMMON_SCRIPTS=(
@@ -472,5 +442,36 @@ if [ "$host_rc" -eq 3 ]; then
   exit 3
 fi
 [ "$host_rc" -eq 0 ] || log "WARNING: host profile step failed; continuing"
+
+# 10. Watchdog scheduler (every 30 min). Runs after the host profile so a failed gateway opt-in (exit 3 above)
+# never schedules it. Install only if absent; never overwrite an existing unit.
+# watchdog.py itself is synced in step 4; its config (scripts/watchdog.json) is host-specific and not managed here.
+if ! hermes_wants_watchdog; then
+  log "watchdog timer not installed: on wsl it is installed with the gateway, which it reports on"
+elif [ "$IS_MAC" = true ]; then
+  WD_PLIST="$HOME/Library/LaunchAgents/ai.hermes.watchdog.plist"
+  if [ -f "$WD_PLIST" ]; then
+    log "watchdog launchd agent already installed"
+  elif [ -f "$REPO_DIR/config/ai.hermes.watchdog.plist" ]; then
+    mkdir -p "$HOME/Library/LaunchAgents" "$HERMES_HOME/logs"
+    sed "s|/Users/ayush|$HOME|g" "$REPO_DIR/config/ai.hermes.watchdog.plist" > "$WD_PLIST"
+    log "installed watchdog launchd agent"
+    launchctl bootstrap "gui/$(id -u)" "$WD_PLIST" 2>/dev/null || log "note: load the watchdog with: launchctl bootstrap gui/$(id -u) $WD_PLIST"
+  fi
+elif command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+  WD_DIR="$HOME/.config/systemd/user"
+  if [ -f "$WD_DIR/hermes-watchdog.timer" ] && [ -f "$WD_DIR/hermes-watchdog.service" ]; then
+    log "watchdog systemd timer already installed"
+  elif [ -f "$REPO_DIR/config/hermes-watchdog.timer" ]; then
+    mkdir -p "$WD_DIR"
+    for u in hermes-watchdog.service hermes-watchdog.timer; do
+      [ -f "$WD_DIR/$u" ] || cp "$REPO_DIR/config/$u" "$WD_DIR/$u"
+    done
+    systemctl --user daemon-reload
+    systemctl --user enable --now hermes-watchdog.timer \
+      && log "installed watchdog systemd timer" \
+      || log "WARNING: could not enable hermes-watchdog.timer"
+  fi
+fi
 
 log "done — setup and sideloaded tools verified."

@@ -654,6 +654,18 @@ class BootstrapTest(_SandboxCase):
         self.assertIn("systemctl --user enable --now hermes-watchdog.timer", calls)
         self.assertIn("hermes gateway install --if-missing", calls)
 
+    def test_failed_gateway_opt_in_leaves_no_watchdog_timer(self):
+        sb = self.make()
+        self.assertEqual(self.bootstrap(sb).returncode, 0)
+        sb.stub("systemctl", f'echo "systemctl $*" >> {sb.calls}\nexit 0\n')
+        unit = sb.home / ".config" / "systemd" / "user" / "hermes-watchdog.timer"
+        for env in ({"HERMES_INSTALL_GATEWAY": "true", "HERMES_STUB_GATEWAY_FAIL": "1"}, {}):
+            sb.calls.write_text("")
+            r = sb.run(f'bash "{_SETUP}"', env, timeout=300)
+            self.assertEqual(r.returncode, 3 if env else 0, r.stdout[-3000:] + r.stderr[-3000:])
+            self.assertNotIn("hermes-watchdog", sb.calls_text())
+            self.assertFalse(unit.exists())
+
     def test_failed_gateway_opt_in_is_the_last_thing_reported(self):
         sb = self.make()
         r = self.bootstrap(sb, extra_env={"HERMES_INSTALL_GATEWAY": "true", "HERMES_STUB_GATEWAY_FAIL": "1"})
