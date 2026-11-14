@@ -20,7 +20,7 @@ for arg in "$@"; do
   esac
 done
 
-APT_PACKAGES=(git curl ca-certificates tmux python3 python3-venv jq)
+APT_PACKAGES=(git curl ca-certificates tmux python3 python3-venv jq wslu)
 NODE_MIN_MAJOR=18
 NVM_VERSION=v0.40.3
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
@@ -28,6 +28,8 @@ export PATH="$HOME/.local/bin:$PATH"
 
 hermes_is_wsl || die "not running inside WSL; on macOS or plain Linux run devbox/setup-hermes.sh"
 [ "$(id -u)" -ne 0 ] || die "run as your normal WSL user, not root; sudo is used only for apt-get"
+
+RERUN="re-run: bash $(printf '%q' "$REPO_DIR/devbox/bootstrap-wsl.sh")"
 
 # WSL interop appends Windows PATH entries; a Windows binary under /mnt/<drive>/ does not count.
 have() {
@@ -58,7 +60,7 @@ install_uv() { curl -LsSf https://astral.sh/uv/install.sh | sh; }
 
 install_node() {
   if [ ! -s "$NVM_DIR/nvm.sh" ]; then
-    curl -fsSL "https://raw.githubusercontent.com/nvm-sh/nvm/$NVM_VERSION/install.sh" | bash
+    curl -fsSL "https://raw.githubusercontent.com/nvm-sh/nvm/$NVM_VERSION/install.sh" | bash || return 1
   fi
   load_nvm
   set +eu
@@ -86,9 +88,9 @@ ensure() {
     return 0
   fi
   log "installing $what"
-  "$fn"
+  "$fn" || die "installing $what failed (see the output above); fix the cause, then $RERUN"
   hash -r
-  "$@" || die "$what install finished but it is still not usable on PATH; open a new shell and re-run"
+  "$@" || die "$what install finished but it is still not usable on PATH; open a new shell, then $RERUN"
 }
 
 missing_packages() {
@@ -98,14 +100,6 @@ missing_packages() {
     [ "$status" = "install ok installed" ] || echo "$pkg"
   done
 }
-
-if [ "${HERMES_WSL_PREFLIGHT_DONE:-false}" != true ]; then
-  if [ "$DRY_RUN" = true ]; then
-    hermes_wsl_preflight "$REPO_DIR"
-  else
-    hermes_wsl_preflight "$REPO_DIR" persist
-  fi
-fi
 
 missing=()
 while IFS= read -r pkg; do
@@ -119,8 +113,19 @@ else
     log "(dry run) apt-get not run"
   else
     command -v apt-get >/dev/null 2>&1 || die "apt-get not found; this bootstrap supports Ubuntu/Debian WSL distros"
-    sudo apt-get update
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
+    sudo apt-get update || die "sudo apt-get update failed; fix apt or sudo, then $RERUN"
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}" \
+      || die "apt-get install failed; fix apt or sudo, then $RERUN"
+    hash -r
+  fi
+fi
+
+# After apt, so a freshly installed wslview is found.
+if [ "${HERMES_WSL_PREFLIGHT_DONE:-false}" != true ]; then
+  if [ "$DRY_RUN" = true ]; then
+    hermes_wsl_preflight "$REPO_DIR"
+  else
+    hermes_wsl_preflight "$REPO_DIR" persist
   fi
 fi
 
@@ -136,7 +141,13 @@ if [ "$DRY_RUN" = true ]; then
   exit 0
 fi
 
-bash "$REPO_DIR/devbox/setup-hermes.sh"
+setup_rc=0
+bash "$REPO_DIR/devbox/setup-hermes.sh" || setup_rc=$?
+if [ "$setup_rc" -eq 3 ]; then
+  die "the gateway requested with HERMES_INSTALL_GATEWAY=true was not installed; see the ERROR block above"
+elif [ "$setup_rc" -ne 0 ]; then
+  die "devbox/setup-hermes.sh failed (exit $setup_rc); fix the error above, then $RERUN"
+fi
 
 log "done. Next steps:"
 log "  1. open a new terminal so PATH changes apply"
