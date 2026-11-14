@@ -60,6 +60,7 @@ hermes_wsl_preflight() {
       for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
         [ -f "$rc" ] || [ "$rc" = "$HOME/.bashrc" ] || continue
         grep -qF "$HERMES_WSL_BROWSER_MARK" "$rc" 2>/dev/null && continue
+        # shellcheck disable=SC2016
         printf '\n%s\nif [ -z "${BROWSER:-}" ] && command -v wslview >/dev/null 2>&1; then export BROWSER=wslview; fi\n' \
           "$HERMES_WSL_BROWSER_MARK" >> "$rc"
         echo "[wsl] added the wslview BROWSER default to $rc"
