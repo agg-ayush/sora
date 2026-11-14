@@ -67,7 +67,8 @@ hermes_wsl_preflight() {
     echo "[wsl]   stops when its WSL session closes. To enable it, add these lines to /etc/wsl.conf:"
     echo "[wsl]     [boot]"
     echo "[wsl]     systemd=true"
-    echo "[wsl]   then run 'wsl --shutdown' from Windows, reopen the distro and re-run devbox/setup-hermes.sh."
+    echo "[wsl]   then run 'wsl --shutdown' from Windows, reopen the distro and re-run devbox/setup-hermes.sh"
+    echo "[wsl]   (prefix it with HERMES_INSTALL_GATEWAY=true to install the gateway as a systemd service)."
   fi
   if command -v wslview >/dev/null 2>&1; then
     if [ -z "${BROWSER:-}" ]; then

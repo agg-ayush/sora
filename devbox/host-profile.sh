@@ -176,19 +176,31 @@ fi
 
 # 6. Gateway service: never raw-copied. Use Hermes's own installer, and only when none exists.
 #    The Mac never polls Telegram (standing rule), so it is skipped when a bot token is present.
-gateway_installed=false
-if [ -e "$HOME/Library/LaunchAgents/ai.hermes.gateway.plist" ] \
-   || [ -e "$HOME/.config/systemd/user/hermes-gateway.service" ] \
-   || [ -e /etc/systemd/system/hermes-gateway.service ]; then
-  gateway_installed=true
+gateway_requested=false
+if [ "$HOST_PROFILE" = wsl ] && [ "${HERMES_INSTALL_GATEWAY:-false}" = true ]; then
+  gateway_requested=true
 fi
-if [ "$gateway_installed" = true ]; then
+gateway_failure=""
+if hermes_gateway_installed; then
   log "gateway service already installed"
-elif [ "$HOST_PROFILE" = wsl ] && [ "${HERMES_INSTALL_GATEWAY:-false}" != true ]; then
+  # A gateway installed before systemd was turned on is left disabled; enabling it is the user's call.
+  if [ "$HOST_PROFILE" = wsl ] && hermes_has_user_systemd; then
+    if [ -e "$HOME/.config/systemd/user/hermes-gateway.service" ] \
+       && ! systemctl --user is-enabled --quiet hermes-gateway.service 2>/dev/null; then
+      log "WARNING: hermes-gateway.service is installed but not enabled, so it does not start with the distro."
+      log "  Enable it with: systemctl --user enable --now hermes-gateway.service"
+    elif [ -e /etc/systemd/system/hermes-gateway.service ] \
+       && ! systemctl is-enabled --quiet hermes-gateway.service 2>/dev/null; then
+      log "WARNING: hermes-gateway.service is installed but not enabled, so it does not start with the distro."
+      log "  Enable it with: sudo systemctl enable --now hermes-gateway.service"
+    fi
+  fi
+elif [ "$HOST_PROFILE" = wsl ] && [ "$gateway_requested" != true ]; then
   log "gateway service not installed on wsl (Hermes cron jobs run only while a gateway runs);"
   log "  opt in with: HERMES_INSTALL_GATEWAY=true bash $REPO_DIR/devbox/setup-hermes.sh"
 elif ! command -v hermes >/dev/null 2>&1; then
   log "hermes CLI not on PATH; gateway service not installed"
+  gateway_failure="the hermes CLI is not on PATH"
 elif [ "$HOST_PROFILE" = mac ] && grep -Eq '^TELEGRAM_BOT_TOKEN=.+' "$HERMES_HOME/.env" 2>/dev/null; then
   log "WARNING: Mac has TELEGRAM_BOT_TOKEN set; not installing the gateway (Mac must not poll Telegram)"
 else
@@ -196,7 +208,10 @@ else
     log "WARNING: no systemd in this WSL distro; the gateway will stop when its WSL session closes"
   fi
   log "no gateway service found; running 'hermes gateway install --if-missing'"
-  hermes gateway install --if-missing || log "WARNING: hermes gateway install failed"
+  if ! hermes gateway install --if-missing; then
+    log "WARNING: hermes gateway install failed"
+    gateway_failure="'hermes gateway install --if-missing' failed (its output is above)"
+  fi
 fi
 
 # 7. Per-host config overrides: ONLY onto a config.yaml created from the template in this same run.
@@ -209,4 +224,19 @@ if [ -f "$PROFILE_DIR/config-overrides.yaml" ]; then
   fi
 fi
 
+# Exit 3 tells setup-hermes.sh that an explicitly requested gateway is missing; it runs after the
+# remaining steps so the rest of the profile still installs.
+if [ "$gateway_requested" = true ] && [ -n "$gateway_failure" ]; then
+  {
+    echo "[host-profile] ======================================================================"
+    echo "[host-profile] ERROR: HERMES_INSTALL_GATEWAY=true was set, but the gateway service was NOT installed:"
+    echo "[host-profile]   $gateway_failure."
+    hermes_has_user_systemd \
+      || echo "[host-profile]   systemd is not running in this distro; enabling it first is recommended (see the [wsl] hint)."
+    echo "[host-profile] Hermes cron jobs do not run without a gateway. Fix the cause, then re-run:"
+    echo "[host-profile]   HERMES_INSTALL_GATEWAY=true bash $(printf '%q' "$REPO_DIR/devbox/setup-hermes.sh")"
+    echo "[host-profile] ======================================================================"
+  } >&2
+  exit 3
+fi
 log "host step done"

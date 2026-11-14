@@ -462,7 +462,13 @@ fi
 # when config.yaml was freshly created above, per-host config overrides. Install-if-absent only; see
 # devbox/host-profile.sh. Skipped in the Claude-only/skills-only modes (they exit earlier) and with
 # HERMES_SKIP_HOST_PROFILE=true. HERMES_HOST_PROFILE=<name> overrides the mac/sora/wsl auto-selection.
+host_rc=0
 REPO_DIR="$REPO_DIR" HERMES_HOME="$HERMES_HOME" FRESH_CONFIG="$FRESH_CONFIG" \
-  bash "$REPO_DIR/devbox/host-profile.sh" || log "WARNING: host profile step failed; continuing"
+  bash "$REPO_DIR/devbox/host-profile.sh" || host_rc=$?
+if [ "$host_rc" -eq 3 ]; then
+  log "finished WITH ERRORS: the gateway requested with HERMES_INSTALL_GATEWAY=true is not installed (see the ERROR block above)."
+  exit 3
+fi
+[ "$host_rc" -eq 0 ] || log "WARNING: host profile step failed; continuing"
 
 log "done — setup and sideloaded tools verified."
