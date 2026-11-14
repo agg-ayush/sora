@@ -443,8 +443,8 @@ if [ "$host_rc" -eq 3 ]; then
 fi
 [ "$host_rc" -eq 0 ] || log "WARNING: host profile step failed; continuing"
 
-# 10. Watchdog scheduler (every 30 min). Runs after the host profile so a failed gateway opt-in (exit 3 above)
-# never schedules it. Install only if absent; never overwrite an existing unit.
+# 10. Watchdog scheduler (every 30 min). Runs after the host profile, which is what installs a wsl gateway.
+# Install only if absent; never overwrite an existing unit.
 # watchdog.py itself is synced in step 4; its config (scripts/watchdog.json) is host-specific and not managed here.
 if ! hermes_wants_watchdog; then
   log "watchdog timer not installed: on wsl it is installed with the gateway, which it reports on"

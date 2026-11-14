@@ -39,7 +39,7 @@ def _write_exe(path: Path, body: str) -> None:
 def _hermes_stub(calls: Path, state: Path) -> str:
     """A hermes CLI that remembers created cron jobs, installed plugins and pm packages.
 
-    HERMES_STUB_GATEWAY_FAIL=1 makes `gateway install` fail.
+    `gateway install` writes a user gateway unit; HERMES_STUB_GATEWAY_FAIL=1 makes it fail instead.
     """
     return textwrap.dedent(f"""\
         echo "hermes $*" >> {calls}
@@ -50,7 +50,8 @@ def _hermes_stub(calls: Path, state: Path) -> str:
           "plugins list") [ -f {state}/plugins ] && sed 's/^/enabled local /' {state}/plugins; exit 0 ;;
           "plugins install") echo "${{3##*/}}" >> {state}/plugins; exit 0 ;;
           "pm install") mkdir -p "${{HERMES_HOME:-$HOME/.hermes}}/tools/$3-stub"; exit 0 ;;
-          "gateway install") [ -z "${{HERMES_STUB_GATEWAY_FAIL:-}}" ] || {{ echo "gateway: boom" >&2; exit 1; }}; exit 0 ;;
+          "gateway install") [ -z "${{HERMES_STUB_GATEWAY_FAIL:-}}" ] || {{ echo "gateway: boom" >&2; exit 1; }}
+            mkdir -p "$HOME/.config/systemd/user" && echo "[Unit]" > "$HOME/.config/systemd/user/hermes-gateway.service"; exit 0 ;;
         esac
         exit 0
         """)
@@ -250,8 +251,8 @@ class WatchdogGateTest(_SandboxCase):
     def test_wsl_without_gateway_skips_watchdog(self):
         self.assertFalse(self.wants(self.sandbox(), {"WSL_DISTRO_NAME": "Ubuntu"}))
 
-    def test_wsl_gateway_opt_in_wants_watchdog(self):
-        self.assertTrue(self.wants(self.sandbox(), {"WSL_DISTRO_NAME": "Ubuntu", "HERMES_INSTALL_GATEWAY": "true"}))
+    def test_wsl_gateway_opt_in_alone_skips_watchdog(self):
+        self.assertFalse(self.wants(self.sandbox(), {"WSL_DISTRO_NAME": "Ubuntu", "HERMES_INSTALL_GATEWAY": "true"}))
 
     def test_wsl_with_installed_gateway_wants_watchdog(self):
         sb = self.sandbox()
@@ -665,6 +666,36 @@ class BootstrapTest(_SandboxCase):
             self.assertEqual(r.returncode, 3 if env else 0, r.stdout[-3000:] + r.stderr[-3000:])
             self.assertNotIn("hermes-watchdog", sb.calls_text())
             self.assertFalse(unit.exists())
+
+    def assertNoWatchdogTimer(self, sb: _Sandbox, r: subprocess.CompletedProcess) -> None:
+        self.assertEqual(r.returncode, 0, r.stdout[-3000:] + r.stderr[-3000:])
+        self.assertNotIn("enable --now hermes-watchdog.timer", sb.calls_text())
+        self.assertFalse((sb.home / ".config" / "systemd" / "user" / "hermes-watchdog.timer").exists())
+
+    def test_skipped_host_profile_leaves_no_watchdog_timer(self):
+        sb = self.make()
+        self.assertEqual(self.bootstrap(sb).returncode, 0)
+        sb.stub("systemctl", f'echo "systemctl $*" >> {sb.calls}\nexit 0\n')
+        for env in ({"HERMES_INSTALL_GATEWAY": "true", "HERMES_SKIP_HOST_PROFILE": "true"}, {}):
+            sb.calls.write_text("")
+            self.assertNoWatchdogTimer(sb, sb.run(f'bash "{_SETUP}"', env, timeout=300))
+
+    def test_host_profile_abort_before_the_gateway_leaves_no_watchdog_timer(self):
+        sb = self.make()
+        self.assertEqual(self.bootstrap(sb).returncode, 0)
+        sb.stub("systemctl", f'echo "systemctl $*" >> {sb.calls}\nexit 0\n')
+        real_bash = shutil.which("bash", path=os.pathsep.join(["/usr/bin", "/bin"]))
+        sb.stub("bash", f'case "$1" in */devbox/host-profile.sh) echo "host-profile: aborted" >&2; exit 1 ;; esac\n'
+                        f'exec "{real_bash}" "$@"\n')
+        sb.calls.write_text("")
+        r = sb.run(f'bash "{_SETUP}"', {"HERMES_INSTALL_GATEWAY": "true"}, timeout=300)
+        self.assertIn("host profile step failed; continuing", r.stdout)
+        self.assertNotIn("gateway install", sb.calls_text())
+        self.assertNoWatchdogTimer(sb, r)
+
+        (sb.bin / "bash").unlink()
+        sb.calls.write_text("")
+        self.assertNoWatchdogTimer(sb, sb.run(f'bash "{_SETUP}"', timeout=300))
 
     def test_failed_gateway_opt_in_is_the_last_thing_reported(self):
         sb = self.make()

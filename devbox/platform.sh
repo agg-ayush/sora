@@ -47,9 +47,9 @@ hermes_gateway_installed() {
     || [ -e /etc/systemd/system/hermes-gateway.service ]
 }
 
-# The watchdog alerts when the gateway is down, so the wsl profile schedules it only alongside a gateway.
+# The watchdog alerts when the gateway is down, so the wsl profile schedules it only once a gateway is installed.
 hermes_wants_watchdog() {
-  [ "$(hermes_host_profile)" != wsl ] || [ "${HERMES_INSTALL_GATEWAY:-false}" = true ] || hermes_gateway_installed
+  [ "$(hermes_host_profile)" != wsl ] || hermes_gateway_installed
 }
 
 HERMES_WSL_BROWSER_MARK="# hermes-setup: WSL login browser"
