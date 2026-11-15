@@ -1,0 +1,14 @@
+{
+  "expect": [
+    "orphan-reaper",
+    "hermes-hygiene",
+    "auth-canary"
+  ],
+  "telegram": false,
+  "notify": false,
+  "repo": "__REPO_DIR__",
+  "ignore_platforms": [
+    "telegram",
+    "whatsapp"
+  ]
+}

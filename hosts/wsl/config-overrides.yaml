@@ -1,0 +1,4 @@
+# Applied by setup-hermes.sh ONLY when config.yaml was created from the template in the same run
+# (deep-merged: dicts merge, lists/scalars replace). Never applied to an existing live config.
+agent:
+  max_turns: 200

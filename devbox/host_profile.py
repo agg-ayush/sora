@@ -5,6 +5,8 @@ Install-if-absent only: existing jobs and existing configs are never touched.
 
   host_profile.py cron <hosts/<profile>/cron-jobs.json> [--mac]
   host_profile.py overrides <config.yaml> <config-overrides.yaml> [--mac]
+  host_profile.py watchdog <hosts/<profile>/watchdog.json> <dest> <repo dir>
+  host_profile.py watchdog-check <installed watchdog.json>
 """
 from __future__ import annotations
 
@@ -116,6 +118,36 @@ def apply_overrides(config_path: Path, overrides_path: Path, is_mac: bool) -> in
     return 0
 
 
+def install_watchdog(src: Path, dest: Path, repo_dir: str) -> int:
+    """Copy watchdog.json with __REPO_DIR__ replaced by repo_dir, JSON-escaped; other bytes unchanged."""
+    escaped = json.dumps(repo_dir)[1:-1].encode()
+    dest.write_bytes(src.read_bytes().replace(b"__REPO_DIR__", escaped))
+    return 0
+
+
+def watchdog_alert_channel(cfg: dict) -> str | None:
+    """The channel scripts/watchdog.py alerts on: `channel`, else the legacy `telegram` boolean (default on)."""
+    channel = cfg.get("channel")
+    if channel is None:
+        channel = "telegram" if cfg.get("telegram", True) else None
+    return channel or None
+
+
+def check_watchdog(path: Path) -> int:
+    """Warn when a watchdog.json would alert over Telegram from a host that should stay local."""
+    try:
+        cfg = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        log(f"WARNING: could not read {path}: {e}")
+        return 0
+    channel = watchdog_alert_channel(cfg) if isinstance(cfg, dict) else None
+    if channel and "telegram" in channel:
+        log(f"WARNING: {path} alerts via Telegram (channel {channel}); this host's profile keeps alerts local.")
+        log(f'  To stop it, set "telegram": false and remove "channel" in {path},')
+        log("  or delete the file and re-run devbox/setup-hermes.sh to install the profile default.")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     if len(argv) < 2:
         print(__doc__)
@@ -126,6 +158,10 @@ def main(argv: list[str]) -> int:
         return install_cron_jobs(Path(pos[1]), is_mac)
     if pos[0] == "overrides":
         return apply_overrides(Path(pos[1]), Path(pos[2]), is_mac)
+    if pos[0] == "watchdog":
+        return install_watchdog(Path(pos[1]), Path(pos[2]), pos[3])
+    if pos[0] == "watchdog-check":
+        return check_watchdog(Path(pos[1]))
     print(__doc__)
     return 2
 
