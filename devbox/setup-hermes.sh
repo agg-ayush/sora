@@ -286,10 +286,12 @@ COMMON_SCRIPTS=(
   watch_ci_main.json
   watch_tier_events.py
   watchdog.py
+  hermes-state.py
 )
 for f in "${COMMON_SCRIPTS[@]}"; do
   [ -f "$REPO_DIR/scripts/$f" ] && cp "$REPO_DIR/scripts/$f" "$HERMES_HOME/scripts/$f"
 done
+cp "$REPO_DIR/config/state-manifest.yaml" "$HERMES_HOME/scripts/state-manifest.yaml"
 
 if [ "$IS_MAC" = true ]; then
   cp "$REPO_DIR/scripts/aws-creds-refresh.sh" "$HERMES_HOME/scripts/aws-creds-refresh.sh"

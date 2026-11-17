@@ -122,6 +122,45 @@ class KanbanAutoHeartbeatTest(unittest.TestCase):
             claude_orchestrate._maybe_kanban_heartbeat("t-fail")
             self.assertEqual(mock_run.call_count, 2)
 
+    def test_first_call_runs_when_monotonic_below_interval(self):
+        """An unseen task heartbeats on its first call whatever the monotonic clock origin."""
+        task = "t-lowclock"
+        self._write_meta(task, {"task_id": task, "kanban_task_id": "KB-4"})
+        for start in (0.0, 0.5, 30.0, 59.9):
+            with self.subTest(start=start):
+                claude_orchestrate._kanban_hb_last.clear()
+                with patch.object(claude_orchestrate, "_tasks_root", return_value=self.tasks_root), \
+                     patch("time.monotonic", return_value=start) as clock, \
+                     patch.object(claude_orchestrate, "_run", return_value=_completed(1)) as mock_run:
+                    claude_orchestrate._maybe_kanban_heartbeat(task)
+                    self.assertEqual(mock_run.call_count, 1)
+                    self.assertNotIn(task, claude_orchestrate._kanban_hb_last)
+                    claude_orchestrate._maybe_kanban_heartbeat(task)
+                    self.assertEqual(mock_run.call_count, 2)
+
+                    mock_run.return_value = _completed(0)
+                    claude_orchestrate._maybe_kanban_heartbeat(task)
+                    self.assertEqual(mock_run.call_count, 3)
+                    self.assertEqual(claude_orchestrate._kanban_hb_last.get(task), start)
+
+                    claude_orchestrate._maybe_kanban_heartbeat(task)
+                    clock.return_value = start + 59.9
+                    claude_orchestrate._maybe_kanban_heartbeat(task)
+                    self.assertEqual(mock_run.call_count, 3)
+
+                    clock.return_value = start + 60.0
+                    claude_orchestrate._maybe_kanban_heartbeat(task)
+                    self.assertEqual(mock_run.call_count, 4)
+
+                    claude_orchestrate._kanban_hb_last.clear()
+                    with patch.object(claude_orchestrate, "_run", side_effect=OSError("no hermes")) as raising:
+                        claude_orchestrate._maybe_kanban_heartbeat(task)
+                    self.assertEqual(raising.call_count, 1)
+                    self.assertNotIn(task, claude_orchestrate._kanban_hb_last)
+                    with patch.object(claude_orchestrate, "_run", return_value=_completed(0)) as retry:
+                        claude_orchestrate._maybe_kanban_heartbeat(task)
+                    self.assertEqual(retry.call_count, 1)
+
     def test_run_raising_is_swallowed(self):
         self._write_meta("t-raise", {"task_id": "t-raise", "kanban_task_id": "KB-3"})
         with patch.object(claude_orchestrate, "_tasks_root", return_value=self.tasks_root), \

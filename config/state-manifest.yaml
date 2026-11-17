@@ -1,0 +1,242 @@
+# Host-state manifest: classifies every top-level entry of the hermes, claude and smem roots.
+# The first matching rule wins, so secret rules sit before the wider ones.
+version: 1
+
+rules:
+  - {root: hermes, match: "*.lock", class: host-local}
+  - {root: hermes, match: "*.pid", class: host-local}
+  - {root: hermes, match: "*.sock", class: host-local}
+  - {root: hermes, match: "*.db-wal", class: host-local}
+  - {root: hermes, match: "*.db-shm", class: host-local}
+  - {root: hermes, match: "*.db-journal", class: host-local}
+  - {root: claude, match: "*.lock", class: host-local}
+  - {root: claude, match: "*.pid", class: host-local}
+  - {root: claude, match: "*.sock", class: host-local}
+  - {root: hermes, match: "state-staging", class: host-local}
+  - {root: hermes, match: "state-restore-backups", class: host-local}
+  - {root: smem, match: "*.lock", class: host-local}
+  - {root: smem, match: "*.pid", class: host-local}
+  - {root: smem, match: "*.sock", class: host-local}
+  - {root: smem, match: "smem.db-wal", class: host-local}
+  - {root: smem, match: "smem.db-shm", class: host-local}
+  - {root: smem, match: "sessions", class: host-local}
+  - {root: hermes, match: ".env*", class: secret}
+  - {root: hermes, match: "config.yaml*", class: secret}
+  - {root: hermes, match: "auth.json*", class: secret}
+  - {root: hermes, match: "mcp-tokens", class: secret}
+  - {root: hermes, match: "secrets", class: secret}
+  - {root: hermes, match: ".credentials*", class: secret}
+  - {root: hermes, match: "credentials*", class: secret}
+  - {root: hermes, match: "backups", class: secret}
+  - {root: hermes, match: ".curator_backups", class: secret}
+  - {root: hermes, match: "state-snapshots", class: secret}
+  - {root: claude, match: "settings.json*", class: secret}
+  - {root: claude, match: "settings.local.json*", class: secret}
+  - {root: claude, match: ".credentials*", class: secret}
+  - {root: claude, match: "backups", class: secret}
+  - {root: hermes, match: "agent-hooks", class: repo-managed}
+  - {root: hermes, match: "cron", class: platform-specific, platform: gateway, carry: true}
+  - {root: hermes, match: "pairing", class: platform-specific, platform: gateway, carry: true}
+  - {root: hermes, match: "platforms", class: platform-specific, platform: gateway, carry: true}
+  - {root: hermes, match: "gateway_state.json", class: platform-specific, platform: gateway, carry: true}
+  - {root: hermes, match: "channel_directory.json", class: platform-specific, platform: gateway, carry: true}
+  - {root: hermes, match: "skills", class: personal-state}
+  - {root: hermes, match: "plugins", class: personal-state}
+  - {root: hermes, match: "scripts", class: personal-state}
+  - {root: hermes, match: "claude-seatbelt-config", class: personal-state}
+  - {root: hermes, match: "claude-k3-config", class: personal-state}
+  - {root: hermes, match: "claude-opus55-cli", class: personal-state}
+  - {root: hermes, match: "memories", class: personal-state}
+  - {root: hermes, match: "SOUL.md*", class: personal-state}
+  - {root: hermes, match: "hooks", class: personal-state}
+  - {root: hermes, match: "skins", class: personal-state}
+  - {root: hermes, match: "pets", class: personal-state}
+  - {root: hermes, match: "plans", class: personal-state}
+  - {root: hermes, match: "kanban", class: personal-state}
+  - {root: hermes, match: "kanban.db", class: personal-state}
+  - {root: hermes, match: "synapse", class: personal-state}
+  - {root: hermes, match: "synapse-mem.json", class: personal-state}
+  - {root: hermes, match: "hermes.db", class: personal-state}
+  - {root: hermes, match: "projects.db", class: personal-state}
+  - {root: hermes, match: "shared-state.db", class: personal-state}
+  - {root: hermes, match: "shell-hooks-allowlist.json", class: personal-state}
+  - {root: hermes, match: "state", class: personal-state}
+  - {root: hermes, match: "profiles", class: personal-state}
+  - {root: hermes, match: "whatsapp", class: platform-specific, platform: gateway}
+  - {root: hermes, match: "state.db", class: history}
+  - {root: hermes, match: "sessions", class: history}
+  - {root: hermes, match: ".hermes_history", class: history}
+  - {root: hermes, match: "checkpoints", class: history}
+  - {root: hermes, match: "verification_evidence.db", class: history}
+  - {root: hermes, match: "hermes-agent", class: host-local}
+  - {root: hermes, match: "node", class: host-local}
+  - {root: hermes, match: "tools", class: host-local}
+  - {root: hermes, match: "tier_orchestrator", class: host-local}
+  - {root: hermes, match: "bin", class: host-local}
+  - {root: hermes, match: "cache", class: host-local}
+  - {root: hermes, match: "bootstrap-cache", class: host-local}
+  - {root: hermes, match: "audio_cache", class: host-local}
+  - {root: hermes, match: "image_cache", class: host-local}
+  - {root: hermes, match: "images", class: host-local}
+  - {root: hermes, match: "logs", class: host-local}
+  - {root: hermes, match: "tasks", class: host-local}
+  - {root: hermes, match: "scratch", class: host-local}
+  - {root: hermes, match: "temp", class: host-local}
+  - {root: hermes, match: "sandboxes", class: host-local}
+  - {root: hermes, match: "terminal-sessions", class: host-local}
+  - {root: hermes, match: "runtime", class: host-local}
+  - {root: hermes, match: "locks", class: host-local}
+  - {root: hermes, match: ".orchestrate-worktrees", class: host-local}
+  - {root: hermes, match: "desktop", class: host-local}
+  - {root: hermes, match: "desktop-build-stamp.json", class: host-local}
+  - {root: hermes, match: "desktop-installed-apps.json", class: host-local}
+  - {root: hermes, match: "web-ui-build-stamp.json", class: host-local}
+  - {root: hermes, match: "tui-theme-boot.json", class: host-local}
+  - {root: hermes, match: "tui-pending-inputs", class: host-local}
+  - {root: hermes, match: "install_id", class: host-local}
+  - {root: hermes, match: "installs", class: host-local}
+  - {root: hermes, match: "gateway-starts.log", class: host-local}
+  - {root: hermes, match: ".provider_models_cache_*.tmp", class: host-local}
+  - {root: hermes, match: "provider_models_cache.json", class: host-local}
+  - {root: hermes, match: "models_dev_cache.*", class: host-local}
+  - {root: hermes, match: "ollama_cloud_models_cache.json", class: host-local}
+  - {root: hermes, match: "plugin-update-checks", class: host-local}
+  - {root: hermes, match: "source-checks", class: host-local}
+  - {root: hermes, match: "lsp", class: host-local}
+  - {root: hermes, match: "disk-cleanup", class: host-local}
+  - {root: hermes, match: "pending", class: host-local}
+  - {root: hermes, match: "pending_messages", class: host-local}
+  - {root: hermes, match: "pastes", class: host-local}
+  - {root: hermes, match: "telemetry", class: host-local}
+  - {root: hermes, match: "processes.json", class: host-local}
+  - {root: hermes, match: "spawn-ledger.json", class: host-local}
+  - {root: hermes, match: "spawn-trees", class: host-local}
+  - {root: hermes, match: "watcher-state", class: host-local}
+  - {root: hermes, match: "feishu_seen_message_ids.json", class: host-local}
+  - {root: hermes, match: ".npm_lock_hash_*", class: host-local}
+  - {root: hermes, match: ".scratch_tip_shown", class: host-local}
+  - {root: hermes, match: ".skills_prompt_snapshot.json", class: host-local}
+  - {root: hermes, match: ".restart_last_processed.json", class: host-local}
+  - {root: claude, match: "commands", class: personal-state}
+  - {root: claude, match: "hooks", class: personal-state}
+  - {root: claude, match: "skills", class: personal-state}
+  - {root: claude, match: "skills-archive", class: personal-state}
+  - {root: claude, match: "plugins", class: personal-state}
+  - {root: claude, match: "CLAUDE.md", class: personal-state}
+  - {root: claude, match: "memory", class: personal-state}
+  - {root: claude, match: "statusline-command.sh", class: personal-state}
+  - {root: claude, match: "task-observer-workspace", class: personal-state}
+  - {root: claude, match: "history.jsonl", class: history}
+  - {root: claude, match: "projects", class: history}
+  - {root: claude, match: ".last-cleanup", class: host-local}
+  - {root: claude, match: ".last-update-result.json", class: host-local}
+  - {root: claude, match: "cache", class: host-local}
+  - {root: claude, match: "daemon", class: host-local}
+  - {root: claude, match: "debug", class: host-local}
+  - {root: claude, match: "downloads", class: host-local}
+  - {root: claude, match: "ide", class: host-local}
+  - {root: claude, match: "jobs", class: host-local}
+  - {root: claude, match: "mcp-needs-auth-cache.json", class: host-local}
+  - {root: claude, match: "paste-cache", class: host-local}
+  - {root: claude, match: "session-env", class: host-local}
+  - {root: claude, match: "sessions", class: host-local}
+  - {root: claude, match: "shell-snapshots", class: host-local}
+  - {root: claude, match: "temp", class: host-local}
+  - {root: smem, match: "smem.db", class: personal-state}
+  - {root: smem, match: "config.json", class: personal-state}
+  - {root: smem, match: ".gitignore", class: personal-state}
+  - {root: smem, match: "spool", class: history}
+
+never_carry:
+  - "*.lock"
+  - "*.pid"
+  - "*.sock"
+  - "__pycache__"
+  - "state-staging"
+  - "state-restore-backups"
+
+secret_globs:
+  - ".env*"
+  - "*.env"
+  - "auth.json*"
+  - ".credentials*"
+  - "credentials*"
+  - "*.key"
+  - "*.pem"
+  - "*.p12"
+  - ".netrc"
+  - "mcp-tokens"
+  - "secrets"
+  - ".claude.json*"
+  - "settings.json*"
+  - "settings.local.json*"
+  - "config.yaml*"
+  - "*.zip"
+  - "*.tar"
+  - "*.tar.*"
+  - "*.tgz"
+  - "*.gpg"
+
+restore_skip:
+  - {root: hermes, match: "scripts/watchdog.json"}
+  - {root: hermes, match: "scripts/state-manifest.yaml"}
+  - {root: hermes, match: "scripts/_alert_relay.py"}
+  - {root: hermes, match: "scripts/_platform.py"}
+  - {root: hermes, match: "scripts/_watermark.py"}
+  - {root: hermes, match: "scripts/auth-canary-relay.py"}
+  - {root: hermes, match: "scripts/auth-canary.py"}
+  - {root: hermes, match: "scripts/auto_complete_merged.py"}
+  - {root: hermes, match: "scripts/deny-guard.sh"}
+  - {root: hermes, match: "scripts/error-journal.py"}
+  - {root: hermes, match: "scripts/hermes-hygiene.py"}
+  - {root: hermes, match: "scripts/orphan-reaper.py"}
+  - {root: hermes, match: "scripts/pr-wait.py"}
+  - {root: hermes, match: "scripts/t3-stop-gate.py"}
+  - {root: hermes, match: "scripts/test-error-journal.py"}
+  - {root: hermes, match: "scripts/trilogy-aws-key.py"}
+  - {root: hermes, match: "scripts/watch_ci_main.py"}
+  - {root: hermes, match: "scripts/watch_ci_main.json"}
+  - {root: hermes, match: "scripts/watch_tier_events.py"}
+  - {root: hermes, match: "scripts/watchdog.py"}
+  - {root: hermes, match: "scripts/hermes-state.py"}
+  - {root: hermes, match: "scripts/aws-creds-refresh.sh"}
+  - {root: hermes, match: "scripts/aws-keep-hot.sh"}
+  - {root: hermes, match: "scripts/aws-creds-refresh-linux.sh"}
+  - {root: hermes, match: "scripts/aws-keep-hot-linux.sh"}
+  - {root: hermes, match: "scripts/aws-token-refresh-hook.sh"}
+  - {root: hermes, match: "scripts/capture-evidence.sh"}
+  - {root: hermes, match: "scripts/process_metrics.py"}
+  - {root: hermes, match: "scripts/red-gate-hook.py"}
+  - {root: hermes, match: "scripts/setup-claude-k3.sh"}
+  - {root: hermes, match: "scripts/subagent-ledger-hook.py"}
+  - {root: hermes, match: "scripts/watchdog.json.example"}
+  - {root: hermes, match: "scripts/excitel-location-watcher.sh"}
+  - {root: hermes, match: "scripts/host-liveness-sweep.sh"}
+  - {root: hermes, match: "scripts/ti-concern-watcher-loop.sh"}
+  - {root: hermes, match: "scripts/ti-concern-watcher.py"}
+  - {root: hermes, match: "scripts/accepted-base.txt"}
+  - {root: hermes, match: "scripts/allowed-emails.txt"}
+  - {root: hermes, match: "scripts/baseline.txt"}
+  - {root: hermes, match: "scripts/exclude.txt"}
+  - {root: hermes, match: "scripts/publish.py"}
+  - {root: hermes, match: "scripts/rewrites.txt"}
+  - {root: hermes, match: "agent-hooks/**"}
+  - {root: hermes, match: "skills/devops/aws-devfactory-operations/**"}
+  - {root: hermes, match: "plugins/claude-orchestrate"}
+  - {root: hermes, match: "plugins/claude-orchestrate/**"}
+  - {root: hermes, match: "claude-seatbelt-config/skills"}
+  - {root: hermes, match: "claude-seatbelt-config/skills/**"}
+  - {root: hermes, match: "claude-seatbelt-config/plugins"}
+  - {root: hermes, match: "claude-seatbelt-config/plugins/**"}
+  - {root: hermes, match: "claude-seatbelt-config/CLAUDE.md"}
+  - {root: hermes, match: "claude-seatbelt-config/CLAUDE.md/**"}
+
+fingerprint_platform:
+  cron_jobs:
+    sora-host-liveness: sora
+    sora-aws-keep-hot: sora
+    ti-hiring-afk-supervisor: sora
+  hermes_plugins.enabled:
+    platforms/telegram: gateway
+  hermes_plugins.disabled:
+    platforms/telegram: [mac, wsl]

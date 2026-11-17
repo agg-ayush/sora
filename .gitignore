@@ -3,6 +3,14 @@
 *.key
 *.pem
 
+# State bundles
+*.gpg
+*.sha256
+*.gpg.lock
+*.tar.gz
+*.tar.gz.lock
+*.partial
+
 # OS
 .DS_Store
 __pycache__/

@@ -1,0 +1,7 @@
+.gitignore
+config.json
+sessions
+smem.db
+smem.db-shm
+smem.db-wal
+spool

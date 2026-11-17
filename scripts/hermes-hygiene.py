@@ -11,6 +11,10 @@ else reclaims:
   * ``hermes doctor --fix``       — surfaces WAL/disk/dependency problems and
     auto-fixes what it can (TCC anchor, WAL checkpoint, etc.).
 
+  * ``hermes-state.py audit`` — reports unclassified host-state entries every run and
+    a change in the fingerprint's diffed sets once; the first run records a silent baseline.
+    ``<state dir>/hermes-state-audit.off`` skips the step.
+
   * Leaked ``remotion-webpack-bundle-*`` dirs in the scratch dir are removed after 2 hours
     (not 7 days) when no process holds them open; see ``prune_remotion_bundles``.
 
@@ -22,11 +26,13 @@ Thresholds are deliberately conservative — this deletes derived artifacts
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -70,7 +76,7 @@ def hermes(*args: str, timeout: int = 900) -> subprocess.CompletedProcess:
     exe = shutil.which("hermes") or str(Path.home() / ".local" / "bin" / "hermes")
     try:
         return subprocess.run(
-            [exe, *args], capture_output=True, text=True, timeout=timeout,
+            [exe, *args], capture_output=True, text=True, check=False, timeout=timeout,
             stdin=subprocess.DEVNULL,
         )
     except Exception as exc:  # noqa: BLE001 — a broken hermes must not crash the cron
@@ -121,7 +127,7 @@ def prune_archived_messages(keep_per_session: int = 400) -> str | None:
     );
     SELECT changes();
     """
-    r = subprocess.run(["sqlite3", str(STATE_DB), sql], capture_output=True, text=True, timeout=180)
+    r = subprocess.run(["sqlite3", str(STATE_DB), sql], capture_output=True, text=True, check=False, timeout=180)
     if r.returncode != 0:
         return f"archived-message prune failed: {(r.stderr or r.stdout).strip()[:120]}"
     lines = [ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip().isdigit()]
@@ -139,7 +145,7 @@ def optimize_sessions() -> str | None:
     try:
         subprocess.run(
             [exe, "sessions", "optimize-storage"], input="y\n",
-            capture_output=True, text=True, timeout=1800,
+            capture_output=True, text=True, check=False, timeout=1800,
         )
     except Exception as exc:  # noqa: BLE001
         return f"sessions optimize-storage failed: {exc}"
@@ -156,7 +162,7 @@ def checkpoint_wal() -> str | None:
         return None
     r = subprocess.run(
         ["sqlite3", str(STATE_DB), "PRAGMA wal_checkpoint(TRUNCATE);"],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True, text=True, check=False, timeout=120,
     )
     if r.returncode != 0:
         return f"WAL checkpoint failed: {(r.stderr or r.stdout).strip()[:120]}"
@@ -263,7 +269,7 @@ def _held_open(path: Path) -> bool:
     try:
         r = subprocess.run(
             ["lsof", "-w", "-t", "+D", str(path)],
-            capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, check=False, timeout=60, stdin=subprocess.DEVNULL,
         )
     except (OSError, subprocess.SubprocessError):
         return True
@@ -330,6 +336,204 @@ def doctor_issues() -> str | None:
     return "doctor:\n" + "\n".join(f"    {ln}" for ln in bad[:8])
 
 
+STATE_SCRIPT = Path(__file__).parent / "hermes-state.py"
+STATE_AUDIT_TIMEOUT = 120
+STATE_BASELINE_NAME = "hermes-state-fingerprint.json"
+STATE_MARKER_NAME = "hermes-state-audit.off"
+DIFFED_SETS = (
+    "skills.names",
+    "hermes_plugins.enabled",
+    "hermes_plugins.disabled",
+    "hermes_plugins.installed",
+    "claude_plugins",
+    "claude_plugins_seatbelt",
+    "claude_mcp_servers",
+    "mcp_servers",
+    "model_aliases",
+    "cron_jobs",
+    "memory_provider",
+    "platforms",
+)
+_STATE_LIST_CAP = 10
+
+
+def _is_schema_1(value) -> bool:
+    return isinstance(value, dict) and type(value.get("schema")) is int and value["schema"] == 1
+
+
+def _state_dir() -> Path:
+    override = os.environ.get("WATCHER_STATE_DIR")
+    if override:
+        return Path(override)
+    return Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes") / "watcher-state"
+
+
+def _get_set(fp: dict, name: str):
+    value = fp
+    for part in name.split("."):
+        value = value.get(part) if isinstance(value, dict) else None
+    return value
+
+
+def _put_set(fp: dict, name: str, value) -> None:
+    parts = name.split(".")
+    for part in parts[:-1]:
+        if not isinstance(fp.get(part), dict):
+            fp[part] = {}
+        fp = fp[part]
+    fp[parts[-1]] = value
+
+
+def _set_shape_ok(name: str, value) -> bool:
+    if value is None:
+        return True
+    if name == "memory_provider":
+        return isinstance(value, str)
+    return isinstance(value, list) and all(isinstance(v, str) for v in value)
+
+
+def _baseline_shape_ok(data: dict) -> bool:
+    for top in ("skills", "hermes_plugins"):
+        if data.get(top) is not None and not isinstance(data[top], dict):
+            return False
+    return all(_set_shape_ok(name, _get_set(data, name)) for name in DIFFED_SETS)
+
+
+def _read_baseline(path: Path):
+    """(status, data): status is 'none' for a first run, 'bad' when unusable, else 'ok'."""
+    try:
+        raw = path.read_bytes()
+    except (FileNotFoundError, NotADirectoryError):
+        return "none", None
+    except OSError:
+        return "bad", None
+    try:
+        data = json.loads(raw.decode())
+    except ValueError:
+        return "bad", None
+    if not _is_schema_1(data) or not _baseline_shape_ok(data):
+        return "bad", None
+    return "ok", data
+
+
+def _write_baseline(state_dir: Path, data: dict) -> bool:
+    tmp = None
+    try:
+        state_dir.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=state_dir, prefix=".hermes-state-fingerprint.", suffix=".tmp")
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f)
+        os.replace(tmp, state_dir / STATE_BASELINE_NAME)
+        return True
+    except OSError:
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+        return False
+
+
+def _capped(sign: str, items: list) -> list[str]:
+    out = [f"{sign}{item}" for item in items[:_STATE_LIST_CAP]]
+    if len(items) > _STATE_LIST_CAP:
+        out.append(f"+{len(items) - _STATE_LIST_CAP} more")
+    return out
+
+
+def _as_items(value) -> set:
+    return {value} if isinstance(value, str) else set(value)
+
+
+def _diff_segments(baseline: dict, current: dict) -> list[str]:
+    segments = []
+    for name in DIFFED_SETS:
+        old, new = _get_set(baseline, name), _get_set(current, name)
+        if old is None or new is None:
+            continue
+        old_items, new_items = _as_items(old), _as_items(new)
+        added, removed = sorted(new_items - old_items), sorted(old_items - new_items)
+        if added or removed:
+            segments.append(" ".join([name, *_capped("+", added), *_capped("-", removed)]))
+    return segments
+
+
+def _merge_baseline(baseline: dict | None, current: dict) -> dict:
+    merged = json.loads(json.dumps(current))
+    if baseline is not None:
+        for name in DIFFED_SETS:
+            if _get_set(current, name) is None and _get_set(baseline, name) is not None:
+                _put_set(merged, name, _get_set(baseline, name))
+    return merged
+
+
+def _unclassified_line(fp: dict) -> str | None:
+    items = fp.get("unclassified") or []
+    if not items:
+        return None
+    names = [f"{u['root']}/{u['name']}" for u in items]
+    shown = ", ".join(names[:_STATE_LIST_CAP])
+    more = f", +{len(names) - _STATE_LIST_CAP} more" if len(names) > _STATE_LIST_CAP else ""
+    return f"state: {len(names)} unclassified: {shown}{more}"
+
+
+def _run_state_audit():
+    """(fingerprint, failure line); exactly one is None."""
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(STATE_SCRIPT), "audit", "--json"],
+            capture_output=True, text=True, check=False, timeout=STATE_AUDIT_TIMEOUT, stdin=subprocess.DEVNULL,
+        )
+    except subprocess.TimeoutExpired:
+        return None, "state audit failed (exit timeout)"
+    fp = None
+    if proc.returncode in (0, 1):
+        try:
+            parsed = json.loads(proc.stdout)
+        except ValueError:
+            parsed = None
+        fp = parsed if _is_schema_1(parsed) else None
+    if fp is None:
+        return None, f"state audit failed (exit {proc.returncode})"
+    return fp, None
+
+
+def _state_audit_lines() -> list[str]:
+    state_dir = _state_dir()
+    try:
+        os.stat(state_dir / STATE_MARKER_NAME)
+        return []
+    except (FileNotFoundError, NotADirectoryError):
+        pass
+    fp, failure = _run_state_audit()
+    if failure:
+        return [failure]
+    lines = []
+    unclassified = _unclassified_line(fp)
+    if unclassified:
+        lines.append(unclassified)
+    status, baseline = _read_baseline(state_dir / STATE_BASELINE_NAME)
+    if status == "ok":
+        segments = _diff_segments(baseline, fp)
+        if segments:
+            lines.append("state fingerprint changed: " + "; ".join(segments))
+    written = _write_baseline(state_dir, _merge_baseline(baseline, fp))
+    if status == "bad":
+        lines.append("state baseline unreadable; re-baselined" if written else "state baseline unreadable; write failed")
+    elif not written:
+        lines.append("state baseline write failed")
+    return lines
+
+
+def state_audit() -> str | None:
+    """Report unclassified host-state entries and fingerprint changes; never raises."""
+    try:
+        lines = _state_audit_lines()
+    except Exception as exc:  # noqa: BLE001 — a broken audit must not crash the cron
+        return f"state audit failed (error {type(exc).__name__})"
+    return "\n    ".join(lines) if lines else None
+
+
 def main() -> int:
     if "--dry-run" in sys.argv[1:]:
         # Only the file-removal rules; the checkpoint/DB/doctor steps have no dry-run mode.
@@ -345,6 +549,7 @@ def main() -> int:
             prune_stale_files(),
             prune_remotion_bundles(),
             doctor_issues(),
+            state_audit(),
         ) if ln
     ]
     if lines:

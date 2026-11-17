@@ -1293,8 +1293,8 @@ def _maybe_kanban_heartbeat(task_id: str, *, force: bool = False) -> None:
         if not ktask:
             return
         now = time.monotonic()
-        last = _kanban_hb_last.get(task_id, 0.0)
-        if not force and (now - last) < _KANBAN_HB_MIN_INTERVAL:
+        last = _kanban_hb_last.get(task_id)
+        if not force and last is not None and now - last < _KANBAN_HB_MIN_INTERVAL:
             return
         cmd = ["hermes", "kanban"]
         kboard = meta.get("kanban_board")
