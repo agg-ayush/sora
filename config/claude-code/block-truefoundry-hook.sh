@@ -1,7 +1,7 @@
 #!/bin/sh
 # Claude Code managed hook: refuse to run Claude Code against the TrueFoundry
-# LLM gateway (pay-per-token anthropic-primary billing). Seatbelt, Fireworks
-# and Anthropic direct login are untouched.
+# LLM gateway (pay-per-token anthropic-primary billing). Fireworks and
+# Anthropic direct login are untouched.
 #
 # Registered as a UserPromptSubmit hook: exit 2 + stderr message blocks the prompt.
 # (A SessionStart hook returning {"continue": false} was tested and does NOT stop
@@ -10,7 +10,7 @@
 # FAIL OPEN: any error, missing tool or unreadable env exits 0 silently. Only a
 # positive match on a TrueFoundry endpoint blocks.
 
-MSG="Claude Code must not run on the TrueFoundry gateway (pay-per-token anthropic-primary billing). Use claude_orchestrate with model_provider=seatbelt (or fireworks as fallback)."
+MSG="Claude Code must not run on the TrueFoundry gateway (pay-per-token anthropic-primary billing). Use claude_orchestrate with model_provider=fireworks or Anthropic direct login."
 
 is_tf() { # stdin: text. Positive TrueFoundry endpoint match only.
   grep -Eiq '(ANTHROPIC_(BEDROCK_|VERTEX_)?BASE_URL)=[^[:space:]]*truefoundry' 2>/dev/null

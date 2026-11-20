@@ -23,8 +23,8 @@ authors it.
   each). Points the user at the dashboard for progress.
 - **T2** (per-issue, spawned in tmux) — a *design + implementation supervisor*.
   Claims the kanban task (atomic lock). If needs-design (and no doc was handed
-  in), runs the design author (Kimi K3 via Fireworks, high effort) + design review
-  (Codex/Sol, cross-engine, 3-round cap) loop ITSELF, attaches the accepted doc,
+  in), runs the design author (Kimi K3.1 Pro via Fireworks, high effort) + design review
+  (Kimi K3.1 Pro via Fireworks, medium effort, fresh session, 3-round cap) loop ITSELF, attaches the accepted doc,
   then implements unit-by-unit against it. Spawns T3 coding sessions in isolated
   worktrees, runs the exit gate (impl + tests + review — each gate step that
   needs work done is itself a T3 session), raises a GitHub PR, moves to `review`,
@@ -32,9 +32,9 @@ authors it.
   when done. Heartbeats kanban to keep the claim alive (TTL 900s).
   Never writes the implementation itself.
 - **T3** — the executor: the Codex CLI or the Claude Code CLI, driven in tmux by
-  the `claude-orchestrate` plugin, on a prescribed per-phase route: design author
-  = Claude Code/Kimi K3 via Fireworks, implementation = Codex `gpt-6-sol`,
-  code review = Claude Code Opus via Seatbelt (`model_provider=seatbelt, model=opus`). The
+  the `claude-orchestrate` plugin, on the prescribed per-phase route: design author,
+  design review, implementation and code review all use Claude Code/Kimi K3.1 Pro
+  via Fireworks (`model_provider=fireworks`). The
   only layer that reads or writes repo files. One session per work unit, whatever
   the kind: design, design review, implementation, tests, code review. Reports
   `DONE|DONE_WITH_CONCERNS|NEEDS_CONTEXT|BLOCKED`.
@@ -166,18 +166,15 @@ cleanup (branch/worktree, `kanban complete` + `reclaim`) → self-terminate.
 ## Auth fallback
 
 Probe per the tier2 skill's principle #7 — Claude steps via the plugin with the
-step's own `model_provider` (never raw `claude -p`), Codex steps via the
+step's own `model_provider` (never raw `claude -p`), direct Codex steps via the
 configured executor/model (`codex exec -m <bare-id>`). The routing summary, in short:
-implementation → `executor=codex, model=gpt-6-sol`; code review → `executor=claude,
-model=opus, model_provider=seatbelt` (Claude Code is never routed through
-TrueFoundry); design author → Kimi K3 via Fireworks. A dead route is a STOP
+design author/review, implementation and code review → `executor=claude,
+model_provider=fireworks` (Claude Code is never routed through TrueFoundry). A dead route is a STOP
 for explicit approval — never an automatic model-group/billing switch.
 
 **Effort (defaults):** T2 design author/reviser = `effort=high` (design is
-judgment-heavy, kimi-k3 via Fireworks). T2 implementation (Codex `gpt-6-sol`) =
-Codex's configured `model_reasoning_effort=high` (`~/.codex/config.toml`) — the
-plugin's `effort` flag is a Claude-CLI option and does not apply to codex
-sessions. T2 code review (Opus 5.5 via Seatbelt) = `effort=medium`.
+judgment-heavy, Kimi K3.1 Pro via Fireworks). T2 implementation uses the Fireworks
+launcher's default effort. T2 design/code review (Kimi K3.1 Pro via Fireworks) = `effort=medium`.
 A *thinking* session is not a stalled one — stall detection ignores file-staleness
 when the pane shows an activity indicator. Genuine stall (no indicator + no file
 change) → `interrupt` (Esc) once → `diagnose` → STOP and escalate; switching

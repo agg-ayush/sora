@@ -1,13 +1,12 @@
 # Hermes config template — setup-hermes.sh copies this to ~/.hermes/config.yaml ONLY when that file is absent.
 # Regenerated from the live Mac config 2026-11-08. NO secrets here: credentials are environment-variable references; fill ~/.hermes/.env.
 
-# Default route: Claude Teams (Opus 5.5) through the Seatbelt gateway.
+# Default route: Kimi K3.1 Pro through Fireworks.
 model:
-  base_url: https://<model-gateway>
-  default: claude-teams-group/claude-opus-5-5
+  base_url: https://api.fireworks.ai/inference/v1
+  default: accounts/fireworks/models/kimi-k3p1-pro
   max_tokens: 128000
-  provider: seatbelt
-  api_mode: anthropic_messages
+  provider: fireworks
   reasoning_effort: high
   aliases:
     k3: fireworks/accounts/fireworks/models/kimi-k3
@@ -19,13 +18,8 @@ model:
     gpt61sol: truefoundry/openai-group/gpt-6.1-sol
     argon: truefoundry/gemini-group/gemini-4-argon
     k3p1: fireworks/accounts/fireworks/models/kimi-k3p1-pro
-    haiku: seatbelt/claude-teams-group/claude-haiku-5-5
-    sonnet: seatbelt/claude-teams-group/claude-sonnet-5-5
-    opus: seatbelt/claude-teams-group/claude-opus-5-5
-    fable: seatbelt/claude-teams-group/claude-fable-5-1
   context_length: 1000000
-# Provider definitions. Every credential is an environment-variable reference resolved from ~/.hermes/.env
-# (the seatbelt api_key is a non-secret dummy; auth rides the x-tfy-api-key / x-maat-token headers).
+# Provider credentials are environment-variable references resolved from ~/.hermes/.env.
 providers:
   truefoundry:
     api: https://<llm-gateway>.truefoundry.cloud/api/llm/api/inference/openai/v1
@@ -81,64 +75,8 @@ providers:
     api_key: ${TRUEFOUNDRY_PERSONAL_TOKEN}
     transport: codex_responses
     name: TrueFoundry GPT-6
-  seatbelt-codex:
-    name: seatbelt-codex
-    api: https://<model-gateway>/v1
-    api_key: ${TRUEFOUNDRY_PERSONAL_TOKEN}
-    extra_headers:
-      x-maat-token: ${MAAT_API_TOKEN}
-    models:
-      codex-seat-traffic/gpt-6-sol:
-        context_length: 872000
-      codex-seat-traffic/gpt-5.3-codex:
-        context_length: 872000
-      codex-seat-traffic/gpt-5.6-luna:
-        context_length: 872000
-      codex-seat-traffic/gpt-5.6-terra:
-        context_length: 872000
-      codex-seat-traffic/gpt-5.6-sol:
-        context_length: 872000
-      codex-seat-traffic/gpt-6-astra:
-        context_length: 872000
-  seatbelt:
-    name: Seatbelt
-    api: https://<model-gateway>
-    transport: anthropic_messages
-    extra_headers:
-      x-tfy-api-key: ${TRUEFOUNDRY_PERSONAL_TOKEN}
-      x-maat-token: ${MAAT_API_TOKEN}
-    default_model: claude-teams-group/claude-sonnet-5-5
-    api_key: placeholder
-    discover_models: false
-    models:
-      claude-teams-group/claude-haiku-5-5:
-        prompt_caching: true
-        context_length: 1000000
-        supports_reasoning: true
-        supports_tools: true
-        supports_vision: true
-      claude-teams-group/claude-sonnet-5-5:
-        prompt_caching: true
-        context_length: 1000000
-        supports_reasoning: true
-        supports_tools: true
-        supports_vision: true
-      claude-teams-group/claude-opus-5-5:
-        prompt_caching: true
-        context_length: 1000000
-        supports_reasoning: true
-        supports_tools: true
-        supports_vision: true
-      claude-teams-group/claude-fable-5-1:
-        prompt_caching: true
-        context_length: 1000000
-        supports_reasoning: true
-        supports_tools: true
-        supports_vision: true
-# Fallbacks when the primary route fails: Kimi K3.1 Pro (Fireworks), then Gemini 4 Argon (TrueFoundry).
+# Fallback when the primary route fails: Gemini 4 Argon (TrueFoundry).
 fallback_providers:
-- model: accounts/fireworks/models/kimi-k3p1-pro
-  provider: fireworks
 - model: gemini-group/gemini-4-argon
   provider: truefoundry
 agent:
@@ -195,7 +133,7 @@ compression:
   threshold_tokens: 500000
 prompt_caching:
   cache_ttl: 5m
-# Side-task routing. vision = auto with a fallback chain; web_extract/background_review ride Seatbelt Opus.
+# Side-task routing. vision = auto with a fallback chain; review/extract use Kimi K3.1 Pro.
 auxiliary:
   vision:
     provider: auto
@@ -221,14 +159,14 @@ auxiliary:
     provider: fireworks
     model: accounts/fireworks/models/glm-5p3-flash
   background_review:
-    provider: seatbelt
-    model: claude-teams-group/claude-opus-5-5
+    provider: fireworks
+    model: accounts/fireworks/models/kimi-k3p1-pro
     fallback_chain:
     - provider: truefoundry
       model: gemini-group/gemini-4-argon
   web_extract:
-    provider: seatbelt
-    model: claude-teams-group/claude-opus-5-5
+    provider: fireworks
+    model: accounts/fireworks/models/kimi-k3p1-pro
 display:
   compact: false
   personality: 'Concise always — short sentences, no filler, no preamble. In conversation: casual register, slang, profanity fine, emojis fine, a bit of edge — personality shows in small layers (a one-liner aside, a dry jab, an emoji at the end), never in a way that buries the answer or pads length. Dark/NSFW humor is on the table if the moment calls for it. In anything that ships — code, code comments, commit messages, PR titles/descriptions, docs, customer-facing text, changelogs — personality is OFF: professional, precise, zero emojis, zero slang, zero profanity, zero jokes. No exceptions. When in doubt whether something ships, treat it as shipping.'
@@ -275,10 +213,10 @@ memory:
   nudge_interval: 10
   flush_min_turns: 6
   provider: synapse-mem
-# Subagents: Seatbelt Sonnet 5.5. subagent_auto_approve avoids silent approval stalls; tier safeguards still bind them.
+# Subagents: Kimi K3.1 Pro. subagent_auto_approve avoids silent approval stalls; tier safeguards still bind them.
 delegation:
-  model: claude-teams-group/claude-sonnet-5-5
-  provider: seatbelt
+  model: accounts/fireworks/models/kimi-k3p1-pro
+  provider: fireworks
   base_url: ''
   api_key: ''
   max_iterations: 250
@@ -497,7 +435,7 @@ session_reset:
   at_hour: 4
   idle_minutes: 10080
   mode: idle
-# Per-model capability overrides (Seatbelt Claude models, Kimi K3.1 Pro vision).
+# Per-model capability overrides (Kimi K3.1 Pro vision).
 model_overrides:
   truefoundry-gpt6:
     openai-group/gpt-6-sol:
@@ -507,31 +445,6 @@ model_overrides:
   truefoundry:
     openai-group/gpt-5.6-sol:
       context_window: 1050000
-  seatbelt:
-    claude-teams-group/claude-haiku-5-5:
-      context_window: 1000000
-      supports_reasoning: true
-      supports_tools: true
-      supports_vision: true
-      model_family: claude-haiku
-    claude-teams-group/claude-sonnet-5-5:
-      context_window: 1000000
-      supports_reasoning: true
-      supports_tools: true
-      supports_vision: true
-      model_family: claude-sonnet
-    claude-teams-group/claude-opus-5-5:
-      context_window: 1000000
-      supports_reasoning: true
-      supports_tools: true
-      supports_vision: true
-      model_family: claude-opus
-    claude-teams-group/claude-fable-5-1:
-      context_window: 1000000
-      supports_reasoning: true
-      supports_tools: true
-      supports_vision: true
-      model_family: claude-fable
   fireworks:
     accounts/fireworks/models/kimi-k3p1-pro:
       supports_vision: true

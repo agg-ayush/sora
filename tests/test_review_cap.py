@@ -262,16 +262,15 @@ class EndToEndStubTest(unittest.TestCase):
                 calls.append(cmd)
                 return subprocess.CompletedProcess(cmd, 0, "", "")
 
-            args = {"prompt": "run pr-review-toolkit", "workdir": tmp, "executor": "claude", "model": "sonnet",
+            args = {"prompt": "run pr-review-toolkit", "workdir": tmp, "executor": "claude",
                     "kanban_task_id": "t_cccc0003"}
             with patch.object(co, "_tasks_root", lambda: root), \
                  patch.object(co, "get_hermes_home", return_value=root), \
                  patch.object(co, "_session_exists", return_value=False), \
-                 patch.object(co, "_seatbelt_headers", return_value="x-tfy-api-key: DUMMY"), \
+                 patch.dict(os.environ, {"FIREWORKS_API_KEY": "DUMMY_FW"}, clear=True), \
                  patch.object(co, "_session_state", return_value={"state": "working"}), \
                  patch.object(co, "_run", side_effect=fake_run), \
-                 patch("time.sleep"), \
-                 patch.dict(os.environ, {}, clear=True):
+                 patch("time.sleep"):
                 for i in (1, 2, 3):
                     r = co._start(dict(args, task_id=f"t2-e2e-review-r{i}"))
                     self.assertTrue(r["ok"], r)

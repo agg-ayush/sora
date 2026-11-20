@@ -21,7 +21,6 @@ REASONS = {
 }
 ALLOWED_HOSTS = {
     "api.github.com", "github.com", "raw.githubusercontent.com",
-    "<model-gateway>", "<model-gateway>",
     "<llm-gateway>.truefoundry.cloud", "api.fireworks.ai", "api.anthropic.com",
     "localhost", "127.0.0.1",
 }

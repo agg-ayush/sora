@@ -53,5 +53,5 @@ Metadata checks: runs that used `gh api` matched GitHub on every row checked. Pa
 
 - Single key per task and one rater: confirm a finalist on a second task before hard-coding it.
 - The ledger verifier checks internal consistency, not truth.
-- Sherlock cost and tokens cannot be metered per run on the Seatbelt route; its protocol is heavy (beads and many dispatches).
+- Sherlock's protocol is heavy (beads and many dispatches); track cost and token usage on the configured metered route.
 - Vendor benchmark claims are vendor-run, not independent.

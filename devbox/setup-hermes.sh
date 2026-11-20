@@ -8,7 +8,7 @@ log() { echo "[setup-hermes] $*"; }
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 CLAUDE_HOME="$HOME/.claude"
-SEATBELT_DIR="$HERMES_HOME/claude-seatbelt-config"
+K3_DIR="$HERMES_HOME/claude-k3-config"
 IS_MAC=false
 [ "$(uname -s)" = "Darwin" ] && IS_MAC=true
 # shellcheck source=devbox/platform.sh
@@ -37,7 +37,7 @@ link_claude_skill() {
 
 link_claude_skills() {
   local src name public_skills
-  mkdir -p "$CLAUDE_HOME/skills" "$HERMES_HOME/cache" "$SEATBELT_DIR"
+  mkdir -p "$CLAUDE_HOME/skills" "$HERMES_HOME/cache" "$K3_DIR"
   for src in "$REPO_DIR"/skills/claude/*; do
     if [ ! -d "$src" ] || [ ! -f "$src/SKILL.md" ]; then
       continue
@@ -64,8 +64,8 @@ link_claude_skills() {
       log "Claude Code $name source missing: $src"
     fi
   done
-  if [ ! -L "$SEATBELT_DIR/skills" ] || [ "$(readlink "$SEATBELT_DIR/skills")" != "$CLAUDE_HOME/skills" ]; then
-    link_claude_skill "$CLAUDE_HOME/skills" "$SEATBELT_DIR/skills"
+  if [ ! -L "$K3_DIR/skills" ] || [ "$(readlink "$K3_DIR/skills")" != "$CLAUDE_HOME/skills" ]; then
+    link_claude_skill "$CLAUDE_HOME/skills" "$K3_DIR/skills"
   fi
 }
 
@@ -128,7 +128,7 @@ mkdir -p "$HERMES_HOME/plugins" \
          "$HERMES_HOME/agent-hooks" \
          "$CLAUDE_HOME/plugins" \
          "$CLAUDE_HOME/skills" \
-         "$SEATBELT_DIR"
+         "$K3_DIR"
 
 # 2. Sidelined CLI tools: ruff, oxlint, smem
 if ! command -v ruff >/dev/null 2>&1; then
@@ -200,8 +200,53 @@ fi
 # and continue. Never forces, 3-way merges or overwrites. Re-run after `hermes update`.
 # HERMES_SKIP_PATCHES=true skips; HERMES_AGENT_DIR points at another checkout (testing).
 HERMES_AGENT_DIR="${HERMES_AGENT_DIR:-$HERMES_HOME/hermes-agent}"
+PROVIDER_PATCH_MIGRATION="$HERMES_HOME/cache/provider-patch-migration-v1.done"
+
+_removed_provider_patch() {
+  local deletion_commit
+  deletion_commit="$(git -C "$REPO_DIR" log --diff-filter=D -1 --format=%H -- patches/seatbelt-claude-teams.patch)"
+  if [ -n "$deletion_commit" ]; then
+    git -C "$REPO_DIR" show "$deletion_commit^:patches/seatbelt-claude-teams.patch"
+  else
+    git -C "$REPO_DIR" show HEAD:patches/seatbelt-claude-teams.patch
+  fi
+}
+
+_reverse_removed_provider_patch() {
+  local patch file
+  [ -f "$PROVIDER_PATCH_MIGRATION" ] && return 0
+  mkdir -p "$HERMES_HOME/cache"
+  patch="$(mktemp "$HERMES_HOME/cache/removed-provider-patch.XXXXXX")"
+  if ! _removed_provider_patch > "$patch" 2>/dev/null; then
+    rm -f "$patch"
+    return 0
+  fi
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    if git -C "$HERMES_AGENT_DIR" apply --reverse --check --include="$file" "$patch" >/dev/null 2>&1; then
+      if ! git -C "$HERMES_AGENT_DIR" apply --reverse --include="$file" "$patch"; then
+        rm -f "$patch"
+        log "ERROR: could not reverse superseded provider patch in $file"
+        return 1
+      fi
+      log "reversed superseded provider patch: $file"
+    elif git -C "$HERMES_AGENT_DIR" apply --check --include="$file" "$patch" >/dev/null 2>&1; then
+      :
+    elif [ "$file" = agent/anthropic_message_convert.py ] && git -C "$HERMES_AGENT_DIR" apply --reverse --check --include="$file" "$REPO_DIR/patches/truefoundry-tool-id.patch" >/dev/null 2>&1; then
+      :
+    elif git -C "$HERMES_AGENT_DIR" apply --reverse --check --include="$file" "$REPO_DIR/patches/anthropic-oauth-identity.patch" >/dev/null 2>&1; then
+      :
+    else
+      rm -f "$patch"
+      log "ERROR: superseded provider patch conflicts with $file; resolve it before applying neutral patches"
+      return 1
+    fi
+  done < <(git -C "$HERMES_AGENT_DIR" apply --numstat "$patch" 2>/dev/null | awk -F'\t' '{print $3}')
+  rm -f "$patch"
+}
+
 apply_hermes_patches() {
-  local patch name file applied=0 skipped=0 failed=0
+  local patch name file applied=0 skipped=0 failed=0 required_failed=0
   if [ "${HERMES_SKIP_PATCHES:-false}" = true ]; then
     log "skipping Hermes source patches (HERMES_SKIP_PATCHES=true)"
     return 0
@@ -210,6 +255,7 @@ apply_hermes_patches() {
     log "WARNING: $HERMES_AGENT_DIR is not a git checkout; Hermes source patches NOT applied"
     return 0
   fi
+  _reverse_removed_provider_patch || return 1
   for patch in "$REPO_DIR"/patches/*.patch; do
     [ -f "$patch" ] || continue
     name="$(basename "$patch")"
@@ -224,16 +270,20 @@ apply_hermes_patches() {
         else
           log "WARNING: $name failed to apply to $file; continuing"
           failed=$((failed + 1))
+          case "$name" in anthropic-oauth-identity.patch|truefoundry-tool-id.patch) required_failed=$((required_failed + 1)) ;; esac
         fi
       else
         log "WARNING: !!! $name does NOT apply to $file (upstream drift or conflicting local edit) — resolve by hand; patch skipped for this file"
         failed=$((failed + 1))
+        case "$name" in anthropic-oauth-identity.patch|truefoundry-tool-id.patch) required_failed=$((required_failed + 1)) ;; esac
       fi
     done < <(git -C "$HERMES_AGENT_DIR" apply --numstat "$patch" 2>/dev/null | awk -F'\t' '{print $3}')
   done
   log "Hermes source patches: $applied applied, $skipped already applied, $failed need attention"
+  [ "$required_failed" -eq 0 ] || return 1
+  date +%s > "$PROVIDER_PATCH_MIGRATION"
 }
-apply_hermes_patches || log "WARNING: Hermes source patch step errored; continuing"
+apply_hermes_patches || { log "ERROR: required provider patch migration failed"; exit 1; }
 
 # 3c. hermes-session-reset-policy plugin: config.yaml's session_reset policy does nothing without it.
 if command -v hermes >/dev/null 2>&1; then
@@ -323,11 +373,10 @@ if [ -x "$SMEM_REPO/integrations/agents/hermes/activate.sh" ] && command -v smem
   fi
 fi
 
-# 6. Claude Code seatbelt config sync (symlinks CLAUDE.md, skills/, plugins/ to ~/.claude)
-log "syncing Claude Code seatbelt config ($SEATBELT_DIR -> $CLAUDE_HOME)"
+# 6. Claude Code config sync (shared rules, skills and plugins for the isolated Fireworks config)
 link_claude_skills
-[ -f "$CLAUDE_HOME/CLAUDE.md" ] && ln -sfn "$CLAUDE_HOME/CLAUDE.md" "$SEATBELT_DIR/CLAUDE.md"
-ln -sfn "$CLAUDE_HOME/plugins" "$SEATBELT_DIR/plugins"
+[ -f "$CLAUDE_HOME/CLAUDE.md" ] && link_claude_skill "$CLAUDE_HOME/CLAUDE.md" "$K3_DIR/CLAUDE.md"
+link_claude_skill "$CLAUDE_HOME/plugins" "$K3_DIR/plugins"
 
 # Copy patched pr-review-toolkit specialist if pr-review-toolkit is in cache
 for d in "$CLAUDE_HOME/plugins/cache/claude-plugins-official/pr-review-toolkit/"*; do
@@ -340,7 +389,7 @@ done
 # hermes-dev-process: agents and commands for the design-led dev process. This repo is registered
 # as a local directory marketplace (hermes-setup); directory plugins are read in place, so repo
 # edits apply at the next Claude Code session start. Installing at user scope enables it in
-# ~/.claude/settings.json; the block below mirrors it into the seatbelt settings.
+# ~/.claude/settings.json; the block below mirrors it into the isolated Fireworks settings.
 install_dev_process_plugin() {
   local mp="hermes-setup" id="hermes-dev-process@hermes-setup" registered state
   if ! command -v claude >/dev/null 2>&1; then
@@ -379,16 +428,16 @@ print(state)
 }
 install_dev_process_plugin || log "WARNING: hermes-dev-process plugin install failed; run: claude plugin marketplace add $REPO_DIR && claude plugin install hermes-dev-process@hermes-setup"
 
-# Enable all installed Claude Code plugins in seatbelt settings.json
+# Enable all installed Claude Code plugins in the isolated Fireworks settings.json
 if [ -f "$CLAUDE_HOME/plugins/installed_plugins.json" ]; then
-  python3 - "$CLAUDE_HOME/plugins/installed_plugins.json" "$SEATBELT_DIR/settings.json" <<'PY'
+  python3 - "$CLAUDE_HOME/plugins/installed_plugins.json" "$K3_DIR/settings.json" <<'PY'
 import json, os, sys
-inst_path, sb_settings_path = sys.argv[1:3]
+inst_path, k3_settings_path = sys.argv[1:3]
 installed = json.load(open(inst_path)).get("plugins", {})
-settings = json.load(open(sb_settings_path)) if os.path.exists(sb_settings_path) else {}
+settings = json.load(open(k3_settings_path)) if os.path.exists(k3_settings_path) else {}
 settings["skipDangerousModePermissionPrompt"] = True
 settings["enabledPlugins"] = {k: True for k in installed}
-json.dump(settings, open(sb_settings_path, "w"), indent=2)
+json.dump(settings, open(k3_settings_path, "w"), indent=2)
 PY
 fi
 

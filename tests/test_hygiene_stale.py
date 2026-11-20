@@ -186,7 +186,8 @@ DIFFED_LITERAL = (
     "hermes_plugins.disabled",
     "hermes_plugins.installed",
     "claude_plugins",
-    "claude_plugins_seatbelt",
+    "claude_plugins_legacy_config",
+    "claude_plugins_k3_config",
     "claude_mcp_servers",
     "mcp_servers",
     "model_aliases",
@@ -219,7 +220,8 @@ def _fp(**sets):
         "skills": {"count": 1, "names": ["s0"]},
         "hermes_plugins": {"enabled": ["e"], "disabled": ["d"], "installed": ["i"]},
         "claude_plugins": ["c"],
-        "claude_plugins_seatbelt": ["cs"],
+        "claude_plugins_legacy_config": ["cs"],
+        "claude_plugins_k3_config": ["k3"],
         "claude_mcp_servers": ["cm"],
         "mcp_servers": ["m"],
         "model_aliases": ["ma"],
@@ -394,10 +396,18 @@ class StateAuditStepTest(unittest.TestCase):
                 self.assertIsNone(self.call())
                 self.assertEqual(_get_path(self.read_baseline(), name), _get_path(new, name))
 
+    def test_legacy_isolated_plugin_baseline_field_is_preserved(self):
+        baseline = _fp()
+        del baseline["claude_plugins_legacy_config"]
+        baseline["claude_plugins_seatbelt"] = ["cs"]
+        self.baseline.write_text(json.dumps(baseline))
+        self.assertIsNone(self.call(_fp()))
+        self.assertEqual(self.read_baseline()["claude_plugins_legacy_config"], ["cs"])
+
     def test_inner_wrong_shape_baseline_rebaselines(self):
-        self.assertEqual(len(set(DIFFED_LITERAL)), 12)
+        self.assertEqual(len(set(DIFFED_LITERAL)), 13)
         self.assertEqual(set(DIFFED_LITERAL), set(hygiene.DIFFED_SETS))
-        self.assertEqual(len(hygiene.DIFFED_SETS), 12)
+        self.assertEqual(len(hygiene.DIFFED_SETS), 13)
         hp = ["hermes_plugins.enabled", "hermes_plugins.disabled", "hermes_plugins.installed"]
         cases = [
             ({"skills": []}, ["skills.names"]),
@@ -408,7 +418,8 @@ class StateAuditStepTest(unittest.TestCase):
             ({"hermes_plugins": {"disabled": {"a": 1}}}, ["hermes_plugins.disabled"]),
             ({"hermes_plugins": {"installed": [1]}}, ["hermes_plugins.installed"]),
             ({"claude_plugins": {"a": True}}, ["claude_plugins"]),
-            ({"claude_plugins_seatbelt": 5}, ["claude_plugins_seatbelt"]),
+            ({"claude_plugins_legacy_config": 5}, ["claude_plugins_legacy_config"]),
+            ({"claude_plugins_k3_config": 5}, ["claude_plugins_k3_config"]),
             ({"claude_mcp_servers": [None]}, ["claude_mcp_servers"]),
             ({"mcp_servers": "a"}, ["mcp_servers"]),
             ({"model_aliases": {"fast": "x"}}, ["model_aliases"]),

@@ -43,7 +43,7 @@ class ConfigTemplateTest(unittest.TestCase):
                 self.assertIsNone(re.search(pat, line), f"line {lineno} matches {pat}: {line[:80]}")
 
     def test_credential_keys_are_env_references(self):
-        allowed_literals = {"", "placeholder"}  # seatbelt dummy api_key, empty delegation api_key
+        allowed_literals = {""}
         for path, value in _walk(self.cfg):
             if _CRED_KEY.search(path.rsplit("/", 1)[-1]) and not isinstance(value, (int, float, bool)):
                 ok = re.fullmatch(r"\$\{[A-Z0-9_]+\}", str(value)) or str(value) in allowed_literals
@@ -62,19 +62,40 @@ class ConfigTemplateTest(unittest.TestCase):
             if re.match(r"^(\w*(KEY|TOKEN|AUTHORIZATION|SECRET|PASSWORD)\w*)=.+", line):
                 self.fail(f"env.template must hold names only: {line.split('=')[0]}")
 
+    def test_k3_setup_uses_kimi_k3p1(self):
+        script = (_ROOT / "scripts" / "setup-claude-k3.sh").read_text()
+        model = "accounts/fireworks/models/kimi-k3p1-pro"
+        self.assertIn(f'data["model"] = "{model}"', script)
+        self.assertIn(f"ANTHROPIC_MODEL={model}", script)
+        self.assertIn("alias claudek3='unset ANTHROPIC_CUSTOM_HEADERS ANTHROPIC_API_KEY_BACKUP BACKUP_ANTHROPIC_API_KEY;", script)
+        self.assertIn(f"CLAUDE_CONFIG_DIR=$K3_DIR", script)
+        self.assertNotIn("ANTHROPIC_MODEL=accounts/fireworks/models/kimi-k3\n", script)
+
     def test_current_routing(self):
         c = self.cfg
-        self.assertEqual((c["model"]["provider"], c["model"]["default"]), ("seatbelt", "claude-teams-group/claude-opus-5-5"))
+        model = "accounts/fireworks/models/kimi-k3p1-pro"
+        self.assertEqual(set(c["providers"]), {"truefoundry", "truefoundry-gpt6", "fireworks"})
         self.assertEqual(
-            [(f["provider"], f["model"]) for f in c["fallback_providers"]],
-            [("fireworks", "accounts/fireworks/models/kimi-k3p1-pro"), ("truefoundry", "gemini-group/gemini-4-argon")],
+            (c["model"]["provider"], c["model"]["default"], c["model"]["base_url"]),
+            ("fireworks", model, "https://api.fireworks.ai/inference/v1"),
         )
-        self.assertEqual((c["delegation"]["provider"], c["delegation"]["model"]), ("seatbelt", "claude-teams-group/claude-sonnet-5-5"))
+        fallbacks = [(f["provider"], f["model"]) for f in c["fallback_providers"]]
+        self.assertEqual(fallbacks, [("truefoundry", "gemini-group/gemini-4-argon")])
+        self.assertNotIn((c["model"]["provider"], c["model"]["default"]), fallbacks)
+        self.assertEqual((c["delegation"]["provider"], c["delegation"]["model"]), ("fireworks", model))
         vision = c["auxiliary"]["vision"]
         self.assertEqual((vision["provider"], vision["model"]), ("auto", ""))
         self.assertEqual(len(vision["fallback_chain"]), 2)
-        self.assertEqual(c["auxiliary"]["web_extract"], {"provider": "seatbelt", "model": "claude-teams-group/claude-opus-5-5"})
-        self.assertTrue(c["model_overrides"]["fireworks"]["accounts/fireworks/models/kimi-k3p1-pro"]["supports_vision"])
+        self.assertEqual(
+            c["auxiliary"]["background_review"],
+            {
+                "provider": "fireworks",
+                "model": model,
+                "fallback_chain": [{"provider": "truefoundry", "model": "gemini-group/gemini-4-argon"}],
+            },
+        )
+        self.assertEqual(c["auxiliary"]["web_extract"], {"provider": "fireworks", "model": model})
+        self.assertTrue(c["model_overrides"]["fireworks"][model]["supports_vision"])
         self.assertEqual((c["session_reset"]["mode"], c["session_reset"]["idle_minutes"]), ("idle", 10080))
 
 

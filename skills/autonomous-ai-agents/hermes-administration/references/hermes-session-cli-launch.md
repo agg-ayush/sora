@@ -178,8 +178,8 @@ disappeared session, just stalled. This is CHEAPER to recover than a full respaw
    respawn under a new name; that would abandon a perfectly good session for no reason.
 2. Verify the network/gateway is actually back before steering, so you're not re-triggering
    the same failure immediately: `curl -sS -o /dev/null -w '%{http_code}' --max-time 10
-   <the Seatbelt base URL https://<model-gateway> (or the configured non-TF endpoint)>` — expect
-   `200`. (A direct `curl https://api.anthropic.com` check is irrelevant here if the worker
+   <the configured non-TF endpoint, such as https://api.fireworks.ai/inference>` — any HTTP response
+   proves reachability; an unauthenticated GET may legitimately return 404. (A direct `curl https://api.anthropic.com` check is irrelevant here if the worker
    routes through a TrueFoundry/custom gateway, not direct Anthropic — check the actual
    configured base URL, don't assume.)
 3. Steer a resume message into the SAME session (`tmux send-keys -t <name> -l '<msg>'` then
@@ -759,7 +759,7 @@ git rebase origin/main   # resolve conflicts if any
 Re-run the test suite once after the rebase before trusting any gate/review
 result from before it — treat the pre-rebase run as void.
 
-> **Policy:** Claude Code must never run against the TrueFoundry gateway (pay-per-token `anthropic-primary` billing); a machine-wide managed hook and `claude_orchestrate` block it. Do not reuse a TF-gateway `ANTHROPIC_BASE_URL` for a Claude Code launch. The TF-gateway examples below are historical; launch Claude Code through `claude_orchestrate` with `model_provider=seatbelt` (or `fireworks`).
+> **Policy:** Claude Code must never run against the TrueFoundry gateway (pay-per-token `anthropic-primary` billing); a machine-wide managed hook and `claude_orchestrate` block it. Do not reuse a TF-gateway `ANTHROPIC_BASE_URL` for a Claude Code launch. The TF-gateway examples below are historical; launch Claude Code through `claude_orchestrate` with `model_provider=fireworks`.
 
 When launching a headless/interactive Claude Code CLI into a tmux pane for a
 handoff (this skill's core pattern, applied to `claude` instead of `hermes
@@ -825,8 +825,8 @@ triggered the escalation.
 
 ## Pitfall: routing `claude` to a third-party Anthropic-compatible endpoint (Fireworks/Kimi K3, or similar) — cached OAuth silently overrides env-var routing
 
-`claude_orchestrate`'s `model_provider` param (`seatbelt` default, `fireworks`
-fallback; `truefoundry` is refused for the claude executor) exists because pointing the `claude` CLI at a non-Anthropic,
+`claude_orchestrate`'s `model_provider` param (`fireworks` default;
+`truefoundry` is refused for the claude executor) exists because pointing the `claude` CLI at a non-Anthropic,
 non-TF-gateway endpoint via plain env vars (`ANTHROPIC_BASE_URL`,
 `ANTHROPIC_AUTH_TOKEN`) does NOT work reliably on a machine with an existing
 Claude Code OAuth login — the cached OAuth state overrides env-based routing,

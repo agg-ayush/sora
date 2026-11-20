@@ -63,7 +63,7 @@ These explain why the better trial runs found more. Details and commands are in 
 
 - State every paid tool used and its cost in the report. Say which figures are billed amounts and which are list prices or a tool's own estimate.
 - Respect a stated cap. With none stated, treat USD 30 across pay-per-token routes (TrueFoundry non-Claude models, Parallel, Fireworks) as the default for a deep or trial run: estimate each paid call first and stop paid calls at about 80% of the cap.
-- Seatbelt Claude is flat rate and does not count against a cap. Never route Claude through TrueFoundry.
+- Claude Code work uses Fireworks or Anthropic direct login; never route it through TrueFoundry.
 - Parallel may train on inputs under standard terms: send no confidential briefs to it.
 - Read `PARALLEL_API_KEY` (and any other key) from `~/.hermes/.env` inside scripts only. Never print it or paste it into a brief.
 - Long Mac runs go under `caffeinate -i -t <seconds>` with a per-run timeout: host sleep kills the stream and the run returns nothing.

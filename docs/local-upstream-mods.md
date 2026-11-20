@@ -30,16 +30,24 @@ Claude-only and skills-only modes exit before it.
 - `tui_gateway/session_history.py`
   - `_legacy_display_kind(role, text)` — recognizes `[IMPORTANT: Background process ` (`process_complete`) and `[ASYNC DELEGATION BATCH COMPLETE` (`async_delegation_complete`) when projecting any untyped row (e.g. a turn interrupted before post-turn stamping).
 
-## 3. Seatbelt Claude Teams OAuth route identity
+## 3. TrueFoundry tool-call ID compatibility
 
-**Patch:** `patches/seatbelt-claude-teams.patch` (applied by `setup-hermes.sh`). **Status:** applied + verified 2026-11-05 on Mac and `sora`. Verify: `pytest tests/agent/test_anthropic_route_oauth_identity.py` in the Hermes checkout.
+**Patch:** `patches/truefoundry-tool-id.patch` (applied by `setup-hermes.sh`).
 
-**Why.** Makes Hermes treat `https://<model-gateway>` / `<model-gateway>` (`providers.seatbelt`) as a native Claude Code OAuth route across main chat, thinking retention, and auxiliary calls (`_maybe_wrap_anthropic`), preventing 429s ("Third-party apps now draw from extra usage").
+**Why.** TrueFoundry appends a `__thought__<base64>` signature to Gemini tool-call IDs. Anthropic/Bedrock rejects IDs over 64 characters, so switching a Gemini session to an Anthropic model can fail with `toolUseId failed to satisfy constraint`.
 
 **Files + functions changed:**
 
-- `agent/anthropic_credentials.py` — `anthropic_route_is_oauth` returns `True` for `seatbelt` / `<model-gateway-domain>` / `<model-gateway>`.
-- `agent/anthropic_endpoints.py` — `_is_third_party_anthropic_endpoint` returns `False` for Seatbelt/<model-gateway> hosts so signed thinking blocks are preserved.
-- `agent/auxiliary_client.py` — `_maybe_wrap_anthropic` sets `is_oauth=anthropic_route_is_oauth(base_url, api_key)` instead of hardcoded `False`.
-- `agent/anthropic_message_convert.py` — `_sanitize_tool_id` strips TrueFoundry's `__thought__<base64>` suffix from Gemini 4 tool call IDs (and bounds length to `<=64` chars) so Bedrock/Anthropic doesn't 400 with `toolUseId failed to satisfy constraint` when switching mid-chat from Argon to Opus/Sonnet.
-- `tests/agent/test_anthropic_route_oauth_identity.py` — regression tests for Seatbelt main + aux identity.
+- `agent/anthropic_message_convert.py` — `_sanitize_tool_id` strips the `__thought__` suffix and hash-truncates IDs to at most 64 characters.
+
+## 4. Claude Teams and direct-Anthropic OAuth identity
+
+**Patch:** `patches/anthropic-oauth-identity.patch` (applied by `setup-hermes.sh`). Verify: `pytest tests/agent/test_anthropic_route_oauth_identity.py` in the Hermes checkout.
+
+**Why.** TrueFoundry Claude Teams routes need Claude Code OAuth identity. Auxiliary calls must use the same route-identity rule as the main chat instead of hardcoding `is_oauth=False`.
+
+**Files + functions changed:**
+
+- `agent/anthropic_credentials.py` — `anthropic_route_is_oauth` recognizes TrueFoundry Claude Teams providers.
+- `agent/auxiliary_client.py` — `_maybe_wrap_anthropic` derives OAuth identity with `anthropic_route_is_oauth`.
+- `tests/agent/test_anthropic_route_oauth_identity.py` — covers TrueFoundry Claude Teams and direct-versus-third-party auxiliary identity.

@@ -346,7 +346,8 @@ DIFFED_SETS = (
     "hermes_plugins.disabled",
     "hermes_plugins.installed",
     "claude_plugins",
-    "claude_plugins_seatbelt",
+    "claude_plugins_legacy_config",
+    "claude_plugins_k3_config",
     "claude_mcp_servers",
     "mcp_servers",
     "model_aliases",
@@ -411,7 +412,11 @@ def _read_baseline(path: Path):
         data = json.loads(raw.decode())
     except ValueError:
         return "bad", None
-    if not _is_schema_1(data) or not _baseline_shape_ok(data):
+    if not _is_schema_1(data):
+        return "bad", None
+    if "claude_plugins_legacy_config" not in data and "claude_plugins_seatbelt" in data:
+        data["claude_plugins_legacy_config"] = data["claude_plugins_seatbelt"]
+    if not _baseline_shape_ok(data):
         return "bad", None
     return "ok", data
 
