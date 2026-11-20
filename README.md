@@ -18,7 +18,7 @@ hosts/      per-host profiles (mac, sora, wsl): host-only scripts, systemd/launc
 
 ## Install / Sync (Mac or Ubuntu EC2 `sora`)
 
-Run the idempotent setup script (`devbox/setup-hermes.sh`) — it installs sidelined tools (`ruff`, `oxlint`, `smem`), wires the `claude-orchestrate` and `synapse-mem` plugins, syncs all tier skills, scripts, and agent-hooks (`subagent-ledger.py`, `aws-token-refresh.sh`, `t3-stop-gate.py`), symlinks `~/.hermes/claude-seatbelt-config` (`CLAUDE.md`, `skills/`, `plugins/`) to `~/.claude` with all plugins enabled, patches `pr-review-toolkit`, and sets global gitignore (`.serena/`, `.ui-flow/`):
+Run the idempotent setup script (`devbox/setup-hermes.sh`) — it installs sidelined tools (`ruff`, `oxlint`, `smem`), wires the `claude-orchestrate` and `synapse-mem` plugins, syncs all tier skills, scripts, and agent-hooks (`subagent-ledger.py`, `aws-token-refresh.sh`, `t3-stop-gate.py`), links `~/.hermes/claude-k3-config` (`CLAUDE.md`, `skills/`, `plugins/`) to `~/.claude` with all plugins enabled, patches `pr-review-toolkit`, and sets global gitignore (`.serena/`, `.ui-flow/`):
 
 ```bash
 git clone https://github.com/agg-ayush/sora.git ~/hermes-setup
@@ -30,7 +30,7 @@ What `devbox/setup-hermes.sh` sets up:
 2. **Hermes plugins & memory:** Symlinks `~/hermes-setup/plugin` → `~/.hermes/plugins/claude-orchestrate` and activates `synapse-mem` (`memory.provider: synapse-mem`).
 3. **Hermes skills:** Symlinks `tier1-suborchestration`, `tier2-orchestration`, and the Claude Code `ui-flow` skill; copies `skills/devops/aws-devfactory-operations`.
 4. **Scripts & hooks:** Copies repo scripts into `~/.hermes/scripts/` (matching host variant `aws-creds-refresh.sh` on Mac vs `aws-creds-refresh-linux.sh` on Linux so `watchdog.py` sees zero script drift) and hooks into `~/.hermes/agent-hooks/`.
-5. **Claude Code seatbelt sync:** Symlinks `~/.hermes/claude-seatbelt-config/{CLAUDE.md,skills,plugins}` → `~/.claude/`, copies the `state-transition-reviewer` specialist into `pr-review-toolkit`, and enables all installed plugins in seatbelt's `settings.json`.
+5. **Claude Code setup:** Links `~/.hermes/claude-k3-config/{CLAUDE.md,skills,plugins}` → `~/.claude/`, enables installed plugins in the isolated Fireworks `settings.json`, and copies the `state-transition-reviewer` specialist into `pr-review-toolkit`.
 6. **Global gitignore:** Adds `.serena/`, `.ui-flow/`, and `**/.claude/settings.local.json`.
 
 ## Install on Windows (WSL2)
@@ -196,8 +196,9 @@ On WSL hygiene only fires while a gateway runs, so run `audit` by hand there.
 ## Local upstream mods
 
 We carry a small number of local patches to the live `~/.hermes/hermes-agent`
-clone that are NOT pushed upstream (Seatbelt Claude Teams OAuth route identity,
-session-bubble fix). They live in `patches/*.patch` and `devbox/setup-hermes.sh`
+clone that are NOT pushed upstream (TrueFoundry tool-call ID compatibility,
+Claude Teams/direct-Anthropic OAuth identity, session-bubble fix). They live in
+`patches/*.patch` and `devbox/setup-hermes.sh`
 applies them idempotently. See `docs/local-upstream-mods.md` — re-run setup
 after every `hermes update`.
 

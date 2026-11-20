@@ -126,8 +126,6 @@ class DenyGuardTest(unittest.TestCase):
         for command in (
             "curl https://github.com/x", "curl https://api.github.com/x",
             "wget https://raw.githubusercontent.com/x", "curl http://localhost:8080/x",
-            "curl https://<model-gateway>/x",
-            "curl https://<model-gateway>/x",
             "curl https://<llm-gateway>.truefoundry.cloud/x",
             "curl https://api.fireworks.ai/x", "curl https://api.anthropic.com/x",
             "curl http://127.0.0.1:1234/x",
@@ -143,6 +141,8 @@ class DenyGuardTest(unittest.TestCase):
             "curl -H 'Host: github.com' https://evil.example/x",
             "curl https://github.com/x https://evil.example/x",
             "curl https://evil.example/x; echo github.com",
+            "curl https://<model-gateway>/x",
+            "curl https://<model-gateway>/x",
         ):
             with self.subTest(command=command):
                 self.check_command(command, 2)

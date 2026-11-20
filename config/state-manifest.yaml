@@ -43,6 +43,7 @@ rules:
   - {root: hermes, match: "skills", class: personal-state}
   - {root: hermes, match: "plugins", class: personal-state}
   - {root: hermes, match: "scripts", class: personal-state}
+  # Retain the legacy isolated Claude config path so existing user state still migrates.
   - {root: hermes, match: "claude-seatbelt-config", class: personal-state}
   - {root: hermes, match: "claude-k3-config", class: personal-state}
   - {root: hermes, match: "claude-opus55-cli", class: personal-state}
@@ -224,12 +225,20 @@ restore_skip:
   - {root: hermes, match: "skills/devops/aws-devfactory-operations/**"}
   - {root: hermes, match: "plugins/claude-orchestrate"}
   - {root: hermes, match: "plugins/claude-orchestrate/**"}
+  # Keep legacy symlink exclusions for bundles created from that config path.
   - {root: hermes, match: "claude-seatbelt-config/skills"}
   - {root: hermes, match: "claude-seatbelt-config/skills/**"}
   - {root: hermes, match: "claude-seatbelt-config/plugins"}
   - {root: hermes, match: "claude-seatbelt-config/plugins/**"}
   - {root: hermes, match: "claude-seatbelt-config/CLAUDE.md"}
   - {root: hermes, match: "claude-seatbelt-config/CLAUDE.md/**"}
+  # Exclude repo-managed links in the active isolated config as well.
+  - {root: hermes, match: "claude-k3-config/skills"}
+  - {root: hermes, match: "claude-k3-config/skills/**"}
+  - {root: hermes, match: "claude-k3-config/plugins"}
+  - {root: hermes, match: "claude-k3-config/plugins/**"}
+  - {root: hermes, match: "claude-k3-config/CLAUDE.md"}
+  - {root: hermes, match: "claude-k3-config/CLAUDE.md/**"}
 
 fingerprint_platform:
   cron_jobs:

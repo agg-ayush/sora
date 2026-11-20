@@ -1,6 +1,6 @@
 # Deep tier: Sherlock + Parallel + verifier
 
-Use when the decision is expensive or hard to reverse, the standard result came back thin or the owner asks for a survey. Expected 20 to 40 minutes and about USD 3 to 6 on metered routes plus the Parallel run. Sherlock itself is unmetered on the Seatbelt route.
+Use when the decision is expensive or hard to reverse, the standard result came back thin or the owner asks for a survey. Expected 20 to 40 minutes and about USD 3 to 6 on metered routes plus the Parallel run.
 
 ## Procedure
 

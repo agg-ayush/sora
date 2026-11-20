@@ -83,9 +83,8 @@ without it is **legacy** (see "Legacy cards"). All artifacts live outside the re
 
 Session task ids (the plugin derives stage and review kind from the names; keep
 them): `t2-<ID>-design` (grounding runs inside it; revisions and amendments `-design-revise<N>`),
-`-dreview<N>`, `-impl`, `-fix<N>`, `-creview<N>`. Routes (all seatbelt):
-implementation and fix round 1 `sonnet`; design author, both review sessions
-and fix rounds 2 and 3 `opus`.
+`-dreview<N>`, `-impl`, `-fix<N>`, `-creview<N>`. All Claude Code routes use
+Kimi K3.1 Pro via Fireworks (`model_provider=fireworks`).
 
 Tiers (set at triage, you may raise, never lower): **none** = no design, tests-first
 still applies to bug fixes; **light** = short design, one-paragraph approach, lens
@@ -130,11 +129,9 @@ services, auth, money, irreversible).
    merge gate.
 7. **Probe the prescribed route before spawning; a dead route means STOP, not a
    silent switch.** Before the first session of a card, probe its route via the
-   plugin with a trivial prompt ("reply PONG"), the same `model_provider=seatbelt`
-   and the same `model` the step will use, and a short timeout. All steps run
-   seatbelt: `opus` for the design author, both review sessions and fix rounds 2
-   and 3; `sonnet` for implementation and fix round 1. Do NOT probe with
-   a raw `claude -p` (that checks the TF/Anthropic endpoint, not seatbelt). If the
+   plugin with a trivial prompt ("reply PONG"), `model_provider=fireworks`, and a
+   short timeout. All Claude Code steps run Kimi K3.1 Pro via Fireworks. Do NOT
+   probe with a raw `claude -p` (that checks the ambient endpoint, not Fireworks). If the
    probe fails, do NOT fall back to another executor on your own — a switch changes
    the model group and billing route. STOP and get explicit human approval before
    switching any step's engine/group. Reviewer independence comes from a FRESH
@@ -157,7 +154,7 @@ services, auth, money, irreversible).
    T2 session; the session's own words: "exit code 143 (SIGTERM) with no output.")
 10. **Design = judgment → CLI coding-agent sessions, not inline reasoning.** The
     `design` skill defines the stages; you launch them through `claude_orchestrate`
-    (Opus author, then ONE fresh Opus review session running `/design-review`).
+    (Kimi K3.1 Pro author, then ONE fresh Kimi K3.1 Pro review session running `/design-review`).
     Read the VERDICT file, never the design-doc body, into your own context. The
     author never reviews its own doc: the reviewer is a fresh session every round.
 
@@ -263,8 +260,8 @@ Design touches no repo: every session below runs in a SCRATCH DIR (no worktree) 
 reads the repo at `<repo-path>` read-only. Pass `kanban_task_id` (+ `kanban_board`)
 on every `start` (principle 2).
 
-**1b.1 Author, with grounding inside the session** (`task_id=t2-<ID>-design`, `model=opus`,
-`effort=high`, `executor=claude`, `model_provider=seatbelt`). Grounding is not a separate
+**1b.1 Author, with grounding inside the session** (`task_id=t2-<ID>-design`,
+`effort=high`, `executor=claude`, `model_provider=fireworks`). Grounding is not a separate
 session: the author runs it first as a subagent, which keeps host load down. Probe the
 route first (principle 7). Prompt: "Step 1, grounding: launch the feature-dev
 `code-explorer` agent as a subagent (Task tool) on `<card-dir>/task.md` (binding inputs and
@@ -289,8 +286,8 @@ problems: write them to `<card-dir>/review/precheck-<n>.md`, steer the author ("
 when a review starts and refuses with `precheck_failed` (no round counted); treat that
 refusal like an exit 1. Three failed pre-checks in a row: ESCALATE.
 
-**1b.3 Review: ONE Opus session per round** (`task_id=t2-<ID>-dreview<N>`, `model=opus`,
-`effort=medium`, fresh every round). Prompt: `/design-review <card-dir>/design.md
+**1b.3 Review: ONE Kimi K3.1 Pro session per round** (`task_id=t2-<ID>-dreview<N>`,
+`executor=claude`, `model_provider=fireworks`, `effort=medium`, fresh every round). Prompt: `/design-review <card-dir>/design.md
 card=<card-dir>/task.md binding=<card-dir>/task.md
 task-dir=<card-dir> round=<N>` (no system guide: design reviewers do not get it; authors, implementers and code reviewers do). The command runs the generalist pass itself and the design
 agents as parallel subagents (the tier sets which), writes agent findings to
@@ -414,8 +411,8 @@ gone, start a new named session in the same workdir.
    3. Fill `references/implementer-brief.md` into `<card-dir>/impl-brief.md` for the unit
       (design path, test-impact map, context pack, adopted NB criteria).
    4. `claude_orchestrate start`: `task_id=t2-<ID>-impl`, `workdir=$WT` (no `worktree`
-      argument), `executor=claude`, `model_provider=seatbelt`, `model=sonnet` (route
-      comes from env, no `--model` flag), `kanban_task_id=<kanban task>` (+
+      argument), `executor=claude`, `model_provider=fireworks` (route comes from
+      env, no `--model` flag), `kanban_task_id=<kanban task>` (+
       `kanban_board=<slug>`). `prompt` = the error-journal block (`python3
       ~/.hermes/scripts/error-journal.py inject claude`, skip when empty) followed by "Read
       `<card-dir>/impl-brief.md` and follow it for unit `<id>`." Keep the `task_id`
@@ -483,7 +480,7 @@ tier none there is no design to amend: re-tier instead. Note the start time (for
 metric's minutes).
 1. The implementer stops (its worktree and commits stay). Write `<card-dir>/review/gap-<n>.md`:
    section, claim, observed reality with file:line, who found it.
-2. Steer the retained author session (or start `t2-<ID>-design-revise<N>`, `opus`, `high`):
+2. Steer the retained author session (or start `t2-<ID>-design-revise<N>`, `model_provider=fireworks`, `effort=high`):
    "Read `<card-dir>/design.md` and `<card-dir>/review/gap-<n>.md`. Amend the doc scoped to this
    gap: change only what it requires, keep the may-decide list and verification table
    consistent, bump `revision`, and add a line to `Changes since review` (the change log:
@@ -575,12 +572,12 @@ step with the real model executor, read the produced artifact and judge whether 
 output is SENSIBLE against the task's intent (not only schema-valid), then feed it
 through the downstream logic. This is additional to 3.2 and 3.3.
 
-**3.3 Code review: ONE Opus session.** Delete the red gate hook file from the worktree first.
+**3.3 Code review: ONE Kimi K3.1 Pro session.** Delete the red gate hook file from the worktree first.
 Compute the review base: `git merge-base
 origin/<parent-branch> HEAD` (on a stacked branch the parent is the previous stack
 branch, not trunk), so the range covers only this PR's own commits.
 `claude_orchestrate start`: `task_id=t2-<ID>-creview<N>` (N = round, 1 first), fresh
-session, `executor=claude`, `model_provider=seatbelt`, `model=opus`, `effort=medium`,
+session, `executor=claude`, `model_provider=fireworks`, `effort=medium`,
 `workdir=<rundir>`, `kanban_task_id` (+ board). Prompt: `/card-review <design-path or none>
 range=<merge-base>..HEAD task_dir=<card-dir> round=<N> tier=<tier> repo=<rundir>`
 (add `brief=<card-dir>/task.md` when there is no design), then the sentence "Verdict file:
@@ -626,7 +623,7 @@ For each round that has BLOCKING findings:
 2. Move the previous `evidence/red-*.txt` and `green-*.txt` into `evidence/r<N>/` and put the
    red gate hook back (README "TDD enforcement", step 4). Fix session: round 1 steers the
    original implementer (the retained `-impl` session; if gone, start `t2-<ID>-fix1`,
-   `sonnet`, `workdir=$WT`). Rounds 2 and 3 start `t2-<ID>-fix<N>` on `opus`, same `workdir`. Prepend the error-journal block. Prompt: "Read `<card-dir>/impl-brief.md`
+   `model_provider=fireworks`, `workdir=$WT`). Later rounds use the same route and `workdir`. Prepend the error-journal block. Prompt: "Read `<card-dir>/impl-brief.md`
    Fix protocol section and `<card-dir>/review/accepted-r<N>.md`, and follow them." Every fix starts
    with a RED test that reproduces its finding (`evidence/red-fix<N>-<F#>.txt`), then the fix
    (`green-fix<N>-<F#>.txt`). Confirm the fix diff contains test changes; if not, steer.
@@ -656,12 +653,12 @@ card, minutes per stage, amendments and escapes by label against the audit basel
 A card that was already running when process v2 shipped has no `process.json` and stays
 on the old flow to its end; the plugin applies no gates, evidence checks or metrics to it.
 Never add `process.json` to a started card. The old flow differs from v2 only here: design
-(when `needs-design: yes`) is an Opus author session plus a fresh Opus review session per
+(when `needs-design: yes`) is a Kimi K3.1 Pro author session plus a fresh Kimi K3.1 Pro review session per
 round using the four-field VERDICT (`approved`, `confidence`, `blocking_issues`,
-`nonblocking_suggestions`) with the same 3-round cap; implementation is a retained Sonnet
+`nonblocking_suggestions`) with the same 3-round cap; implementation is a retained Kimi K3.1 Pro
 session per task that runs the suite when a unit is done; the gate runs the tests yourself
 (baseline first: run the suite on the base commit in a detached worktree and block only on
-new failures; the `check_diff` fence and test-fixer rules apply unchanged) and a fresh Sonnet
+new failures; the `check_diff` fence and test-fixer rules apply unchanged) and a fresh Kimi K3.1 Pro
 `/pr-review-toolkit:review-pr` session writing a verdict file, with at most 3 review→fix
 rounds (one fix session for all findings per round); no escape labels. Claim, ledger,
 `check_diff`, PR, merge gate, cleanup and error journal are identical to v2.
@@ -778,7 +775,7 @@ minimal rework directly (read_file/patch) against the rejection's own spec.
    `pr-description-style`) to describe the NEW minimal mechanism. Never leave an
    over-built PR's original description in place after a rework — it no longer
    matches the diff and misleads the human reviewer.
-4. **Run one fresh independent code-review round** (Sonnet via seatbelt, `claude_orchestrate`)
+4. **Run one fresh independent code-review round** (Kimi K3.1 Pro via Fireworks, `claude_orchestrate`)
    against the reworked diff (`origin/<base>...HEAD`) before treating it as ready.
    A smaller diff is not itself proof of correctness — get an actual approved
    verdict on the NEW diff, same as any other Phase 3.3 review.
@@ -787,7 +784,7 @@ minimal rework directly (read_file/patch) against the rejection's own spec.
    fresh (baseline + branch, per 3.2), even if the old PR had already gone green
    once.
 
-4. **Run one fresh independent code-review round** (`/card-review`, Opus via seatbelt, as in
+4. **Run one fresh independent code-review round** (`/card-review`, Kimi K3.1 Pro via Fireworks, as in
    Phase 3.3) against the reworked diff (`origin/<base>...HEAD`) before treating it as ready.
    A smaller diff is not itself proof of correctness: get an actual passing verdict on the NEW
    diff. It counts toward the plugin's 3-round cap.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Wire Claude Code to use Kimi K3 via Fireworks on this machine.
+# Wire Claude Code to use Kimi K3.1 Pro via Fireworks on this machine.
 # Creates ~/.hermes/claude-k3-config/ and sets the env vars.
 # Requires: claude CLI installed, ~/.hermes/.env with FIREWORKS_API_KEY.
 set -euo pipefail
@@ -15,15 +15,41 @@ grep -q "FIREWORKS_API_KEY" "$ENV_FILE" || { echo "FIREWORKS_API_KEY not in $ENV
 
 mkdir -p "$K3_DIR"
 
-# .claude.json — minimal config
-cat > "$K3_DIR/.claude.json" << 'EOF'
-{
-  "env": {}
-}
-EOF
+# Initialize JSON without dropping session history or plugin settings.
+python3 - "$K3_DIR" <<'PY'
+import json
+import sys
+from pathlib import Path
 
-# CLAUDE.md — global rules for K3 sessions
-cat > "$K3_DIR/CLAUDE.md" << 'CLAUDEEOF'
+root = Path(sys.argv[1])
+for name in (".claude.json", "settings.json"):
+    path = root / name
+    try:
+        data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    except ValueError as exc:
+        raise SystemExit(f"invalid JSON in {path}: {exc}")
+    if not isinstance(data, dict):
+        raise SystemExit(f"expected a JSON object in {path}")
+    if name == ".claude.json":
+        data.setdefault("env", {})
+    else:
+        data["model"] = "accounts/fireworks/models/kimi-k3p1-pro"
+        env = data.get("env", {})
+        if not isinstance(env, dict):
+            raise SystemExit(f"expected env to be an object in {path}")
+        for key in (
+            "ANTHROPIC_BASE_URL", "ANTHROPIC_CUSTOM_HEADERS", "ANTHROPIC_MODEL",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_DEFAULT_FABLE_MODEL",
+            "ANTHROPIC_API_KEY_BACKUP", "BACKUP_ANTHROPIC_API_KEY",
+        ):
+            env.pop(key, None)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+PY
+
+# CLAUDE.md — seed defaults without overwriting existing or linked rules.
+if [ ! -e "$K3_DIR/CLAUDE.md" ] && [ ! -L "$K3_DIR/CLAUDE.md" ]; then
+  cat > "$K3_DIR/CLAUDE.md" << 'CLAUDEEOF'
 # Global rules
 
 - **Never commit directly to main.** Always work on a branch. Committing and pushing on non-main branches is fine without an explicit ask — but main is off-limits; open a PR instead.
@@ -40,34 +66,30 @@ cat > "$K3_DIR/CLAUDE.md" << 'CLAUDEEOF'
 
 - **Google Docs/Sheets/Slides/Drive/Gmail/Calendar: use `gog`, not a raw fetch.** These are gated behind OAuth, so a direct WebFetch/HTTP call will fail. Use `gog` (on PATH as `gog`) instead — it's authorized as ayushaggarwal018@gmail.com covering gmail, calendar, drive, docs, sheets, and slides.
 CLAUDEEOF
+fi
 
-# settings.json — minimal settings
-cat > "$K3_DIR/settings.json" << 'EOF'
-{
-  "model": "sonnet[1m]"
-}
-EOF
-
-# Copy skills if the source exists
+# Copy missing skills if the source exists; linked and existing files stay untouched.
 SKILL_SRC="$HERMES_HOME/skills"
-if [ -d "$SKILL_SRC" ]; then
+if [ -d "$SKILL_SRC" ] && [ ! -L "$K3_DIR/skills" ]; then
   for skill_dir in "$SKILL_SRC"/*/SKILL.md; do
     [ -f "$skill_dir" ] || continue
     skill_name=$(basename "$(dirname "$skill_dir")")
     mkdir -p "$K3_DIR/skills/$skill_name"
-    cp "$skill_dir" "$K3_DIR/skills/$skill_name/"
+    skill_dest="$K3_DIR/skills/$skill_name/SKILL.md"
+    [ -e "$skill_dest" ] || [ -L "$skill_dest" ] || cp "$skill_dir" "$skill_dest"
   done
 fi
 
-echo "K3 config written to $K3_DIR"
+echo "K3.1 Pro config written to $K3_DIR"
 echo ""
-echo "To use K3 for a Claude Code session:"
+echo "To use K3.1 Pro for a Claude Code session:"
+echo "  unset ANTHROPIC_CUSTOM_HEADERS ANTHROPIC_API_KEY_BACKUP BACKUP_ANTHROPIC_API_KEY"
 echo "  export CLAUDE_CONFIG_DIR=$K3_DIR"
 echo "  export ANTHROPIC_BASE_URL=https://api.fireworks.ai/inference"
 echo "  export ANTHROPIC_AUTH_TOKEN=\$(grep FIREWORKS_API_KEY $ENV_FILE | cut -d= -f2)"
 echo "  export ANTHROPIC_API_KEY="
-echo "  export ANTHROPIC_MODEL=accounts/fireworks/models/kimi-k3"
+echo "  export ANTHROPIC_MODEL=accounts/fireworks/models/kimi-k3p1-pro"
 echo "  claude"
 echo ""
 echo "Or add this alias to your shell:"
-echo "  alias claudek3='CLAUDE_CONFIG_DIR=$K3_DIR ANTHROPIC_BASE_URL=https://api.fireworks.ai/inference ANTHROPIC_AUTH_TOKEN=\$(grep FIREWORKS_API_KEY $ENV_FILE | cut -d= -f2) ANTHROPIC_API_KEY= ANTHROPIC_MODEL=accounts/fireworks/models/kimi-k3 claude'"
+echo "  alias claudek3='unset ANTHROPIC_CUSTOM_HEADERS ANTHROPIC_API_KEY_BACKUP BACKUP_ANTHROPIC_API_KEY; CLAUDE_CONFIG_DIR=$K3_DIR ANTHROPIC_BASE_URL=https://api.fireworks.ai/inference ANTHROPIC_AUTH_TOKEN=\$(grep FIREWORKS_API_KEY $ENV_FILE | cut -d= -f2) ANTHROPIC_API_KEY= ANTHROPIC_MODEL=accounts/fireworks/models/kimi-k3p1-pro claude'"

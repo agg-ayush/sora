@@ -22,7 +22,8 @@ class BlockTruefoundryHookTest(unittest.TestCase):
         r = run_hook(ANTHROPIC_BASE_URL=TF)
         self.assertEqual(r.returncode, 2)
         self.assertIn("TrueFoundry", r.stderr)
-        self.assertIn("seatbelt", r.stderr)
+        self.assertIn("fireworks", r.stderr)
+        self.assertIn("Anthropic direct", r.stderr)
         self.assertEqual(r.stdout, "")
 
     def test_case_insensitive_and_other_base_url_vars(self):
@@ -31,14 +32,14 @@ class BlockTruefoundryHookTest(unittest.TestCase):
                 self.assertEqual(run_hook(**{var: "https://TrueFoundry.example/x"}).returncode, 2)
 
     def test_allowed_endpoints_are_silent(self):
-        for url in ("https://<model-gateway>", "https://api.fireworks.ai/inference", None):
+        for url in ("https://api.anthropic.com", "https://api.fireworks.ai/inference", None):
             with self.subTest(url=url):
                 env = {"ANTHROPIC_BASE_URL": url} if url else {}
                 r = run_hook(**env)
                 self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", ""))
 
     def test_other_variables_mentioning_truefoundry_do_not_block(self):
-        r = run_hook(TFY_BASE="https://<llm-gateway>.truefoundry.cloud", ANTHROPIC_BASE_URL="https://<model-gateway>")
+        r = run_hook(TFY_BASE="https://<llm-gateway>.truefoundry.cloud", ANTHROPIC_BASE_URL="https://api.anthropic.com")
         self.assertEqual(r.returncode, 0)
 
     def test_fails_open_without_tools(self):
@@ -57,7 +58,7 @@ class BlockTruefoundryHookTest(unittest.TestCase):
             f"r=subprocess.run(['env','-i','PATH='+__import__('os').environ['PATH'],'sh',{str(HOOK)!r}],capture_output=True);"
             "print('rc=%d'%r.returncode)"
         )
-        for url, want in ((TF, "rc=2"), ("https://<model-gateway>", "rc=0")):
+        for url, want in ((TF, "rc=2"), ("https://api.anthropic.com", "rc=0")):
             with self.subTest(url=url):
                 r = subprocess.run([sys.executable, "-c", code], env={"PATH": os.environ.get("PATH", ""), "ANTHROPIC_BASE_URL": url},
                                    capture_output=True, text=True, timeout=20)

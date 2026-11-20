@@ -2,7 +2,7 @@
 
 Attribution: adapted, in our own words, from github.com/convyrtech/claude-evidence-research (`skills/research/` files at commit 698c198793ccc7b69bc5c6be4db67c79e80e52b7, MIT licence, alpha, 0 stars). Nothing from that repo is installed or required. The seeding and tree-walk steps come from what the best trial run and the earlier survey did, not from that repo's text.
 
-Use for "what exists for X" and prior art that feeds a decision. Run it as one Opus-class researcher with a self-contained brief (exact question, exclusions, in-scope and out-of-scope examples, the output contract below). About 15 minutes, USD 2 to 4 of model spend on a metered route and nothing extra on Seatbelt.
+Use for "what exists for X" and prior art that feeds a decision. Run it as one Opus-class researcher with a self-contained brief (exact question, exclusions, in-scope and out-of-scope examples, the output contract below). About 15 minutes and USD 2 to 4 of model spend on a metered route.
 
 ## Workspace
 

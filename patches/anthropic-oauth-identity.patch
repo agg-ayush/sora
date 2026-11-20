@@ -1,0 +1,221 @@
+diff --git a/agent/anthropic_credentials.py b/agent/anthropic_credentials.py
+index 1b75a3a07a..0db9630e2b 100644
+--- a/agent/anthropic_credentials.py
++++ b/agent/anthropic_credentials.py
+@@ -75,6 +75,9 @@ def is_native_anthropic_host(base_url: Any) -> bool:
+     return not text or base_url_hostname(text) == "api.anthropic.com"
+ 
+ 
++_CLAUDE_TEAMS_PROVIDERS = frozenset({"truefoundry", "claude-teams", "truefoundry-claude-teams"})
++
++
+ def anthropic_route_is_oauth(base_url: Any, credential: Any, *, provider: Optional[str] = None) -> bool:
+     """Claude Code OAuth identity for one Anthropic Messages route (#114967).
+ 
+@@ -86,14 +89,21 @@ def anthropic_route_is_oauth(base_url: Any, credential: Any, *, provider: Option
+     materialized once for the shape test (``CommandTokenSource`` caches, so this never double-mints)
+     and a mint failure classifies as non-OAuth — the wire client surfaces the real error.
+     """
+-    if not (is_native_anthropic_host(base_url) or (provider or "").strip().lower() == "anthropic"):
++    host = base_url_hostname(str(base_url or ""))
++    provider_name = (provider or "").strip().lower()
++    trusted_route = host == "promptlens.trilogy.com" or provider_name in _CLAUDE_TEAMS_PROVIDERS
++    if not (trusted_route or is_native_anthropic_host(base_url) or provider_name == "anthropic"):
+         return False
+     if callable(credential) and not isinstance(credential, str):
+         try:
+             credential = credential()
+         except Exception:
+             return False
+-    return isinstance(credential, str) and _is_oauth_token(credential)
++    if not isinstance(credential, str) or not credential:
++        return False
++    if credential.startswith("sk-ant-") and not _is_oauth_token(credential):
++        return False
++    return trusted_route or _is_oauth_token(credential)
+ 
+ 
+ class CredentialPersistError(RuntimeError):
+diff --git a/agent/anthropic_endpoints.py b/agent/anthropic_endpoints.py
+index d8a7152f3e..79131c347e 100644
+--- a/agent/anthropic_endpoints.py
++++ b/agent/anthropic_endpoints.py
+@@ -29,7 +29,9 @@ def _is_third_party_anthropic_endpoint(base_url: str | None) -> bool:
+     """Any non-anthropic.com endpoint (own x-api-key keys; skip OAuth detection). No base_url =
+     direct Anthropic API."""
+     normalized = _normalized_lower(base_url)
+-    return bool(normalized) and "anthropic.com" not in normalized
++    if not normalized:
++        return False
++    return base_url_hostname(base_url or "") not in {"api.anthropic.com", "promptlens.trilogy.com"}
+ 
+ 
+ def _is_kimi_coding_endpoint(base_url: str | None) -> bool:
+diff --git a/agent/auxiliary_client.py b/agent/auxiliary_client.py
+index 5476e16359..0678c9f4a8 100644
+--- a/agent/auxiliary_client.py
++++ b/agent/auxiliary_client.py
+@@ -1866,9 +1866,8 @@ def _endpoint_speaks_anthropic_messages(base_url: str) -> bool:
+     return hostname == "api.anthropic.com" or bool(hostname == "api.kimi.com" and "/coding" in normalized)
+ 
+ 
+-def _maybe_wrap_anthropic(
+-    client_obj: Any, model: str, api_key: str, base_url: str, api_mode: Optional[str] = None
+-) -> Any:
++def _maybe_wrap_anthropic(client_obj: Any, model: str, api_key: str, base_url: str,
++                          api_mode: Optional[str] = None, *, provider: Optional[str] = None) -> Any:
+     """Rewrap a plain OpenAI client in ``AnthropicAuxiliaryClient`` when the endpoint speaks Anthropic Messages.
+ 
+     Single transport-correction chokepoint at the end of every ``resolve_provider_client`` branch; returns
+@@ -1909,7 +1908,8 @@ def _maybe_wrap_anthropic(
+         "(model=%s, base_url=%s, api_mode=%s)",
+         model, base_url[:60] if base_url else "", api_mode or "auto-detected",
+     )
+-    return AnthropicAuxiliaryClient(real_client, model, api_key, base_url, is_oauth=False)
++    from agent.anthropic_credentials import anthropic_route_is_oauth
++    return AnthropicAuxiliaryClient(real_client, model, api_key, base_url, is_oauth=anthropic_route_is_oauth(base_url, api_key, provider=provider))
+ 
+ 
+ def _read_nous_auth() -> Optional[dict]:
+@@ -2179,7 +2179,7 @@ def _resolve_api_key_provider() -> tuple[Optional[OpenAI], Optional[str]]:
+         if merged:
+             extra["default_headers"] = merged
+         client = _create_openai_client(api_key=api_key, base_url=base_url, **extra)
+-        return _tag_backend(_maybe_wrap_anthropic(client, model, api_key, raw_base_url), provider_id), model
++        return _tag_backend(_maybe_wrap_anthropic(client, model, api_key, raw_base_url, provider=provider_id), provider_id), model
+     return None, None
+ 
+ 
+@@ -4756,7 +4756,7 @@ def _wrap_transport(req: _ResolveRequest, client_obj: Any, final_model_str: str,
+     # A profile that declares the Messages wire (commandcode-anthropic) is on it whatever the URL
+     # looks like; the same declaration gates ``_reasoning_config`` in _build_call_kwargs.
+     api_mode = req.api_mode or _profile_declared_messages_wire(req.provider)
+-    return _maybe_wrap_anthropic(client_obj, final_model_str, api_key_str, base_url_str, api_mode)
++    return _maybe_wrap_anthropic(client_obj, final_model_str, api_key_str, base_url_str, api_mode, provider=req.provider)
+ 
+ 
+ def _profile_declared_messages_wire(provider: str) -> Optional[str]:
+@@ -5025,7 +5025,7 @@ def _resolve_named_custom_branch(req: _ResolveRequest) -> Optional[_ResolveResul
+             return _route_client(req, _named_custom_openai_wire_client(custom_base, custom_key, entry_headers), final_model)
+         return _route_client(
+             req, AnthropicAuxiliaryClient(real_client, final_model, custom_key, custom_base,
+-                                          is_oauth=anthropic_route_is_oauth(custom_base, custom_key)), final_model)
++                                          is_oauth=anthropic_route_is_oauth(custom_base, custom_key, provider=provider)), final_model)
+     client = _named_custom_openai_wire_client(custom_base, custom_key, entry_headers)
+     # codex_responses, or auto-detect via _wrap_transport (which reads the task-level api_mode).
+     if entry_api_mode == "codex_responses":
+diff --git a/tests/agent/test_anthropic_route_oauth_identity.py b/tests/agent/test_anthropic_route_oauth_identity.py
+index f53cb2f303..7d4cd45c94 100644
+--- a/tests/agent/test_anthropic_route_oauth_identity.py
++++ b/tests/agent/test_anthropic_route_oauth_identity.py
+@@ -31,7 +31,14 @@ def test_route_identity_requires_native_host_and_oauth_shape():
+     assert anthropic_route_is_oauth("", OAUTH) is True  # empty = native default route
+     # provider=anthropic behind a proxy keeps today's behaviour (identity travels with the provider).
+     assert anthropic_route_is_oauth("https://proxy.example.com", OAUTH, provider="anthropic") is True
+-    # Third-party hosts and Console keys never qualify; a callable that cannot mint is non-OAuth.
++    # Trilogy's Claude Teams gateways intentionally carry Claude Code OAuth identity even when
++    # their gateway credentials are opaque or minted outside Anthropic's native token format.
++    assert anthropic_route_is_oauth("https://promptlens.trilogy.com/v1", "opaque") is True
++    for provider in ("truefoundry", "claude-teams", "truefoundry-claude-teams"):
++        assert anthropic_route_is_oauth(
++            "https://gateway.example.com/anthropic", "opaque", provider=provider
++        ) is True
++    # Unrelated third-party hosts and Console keys never qualify; a callable that cannot mint is non-OAuth.
+     assert anthropic_route_is_oauth("https://api.minimax.io/anthropic", key_cmd) is False
+     assert anthropic_route_is_oauth("https://api.anthropic.com", CONSOLE) is False
+     # Neither do user-scoped sk-ant-usr* API keys: they pay per token, not via a Claude
+@@ -73,3 +80,94 @@ def test_key_cmd_oauth_route_builds_claude_code_identity_on_main_and_aux_clients
+     monkeypatch.setattr(aux, "_resolve_custom_runtime", lambda: ("https://api.minimax.io/anthropic", key_cmd, "anthropic_messages"))
+     third_party_aux, _model = aux._try_custom_endpoint()
+     assert isinstance(third_party_aux, AnthropicAuxiliaryClient) and third_party_aux.chat.completions._is_oauth is False
++
++
++def test_promptlens_gateway_keeps_claude_code_identity_and_native_thinking():
++    """Claude Teams gateways need Claude Code identity and native signed-thinking replay."""
++    from agent.anthropic_endpoints import _is_third_party_anthropic_endpoint
++
++    promptlens = "https://promptlens.trilogy.com/v1"
++    assert anthropic_route_is_oauth(promptlens, "dummykey") is True
++    assert _is_third_party_anthropic_endpoint(promptlens) is False
++    assert _is_third_party_anthropic_endpoint("https://api.minimax.io/anthropic") is True
++
++
++@pytest.mark.parametrize("base_url", [
++    "https://promptlens.trilogy.com.evil.example/v1",
++    "https://evil.example/promptlens.trilogy.com/v1",
++    "https://evil.example/v1?next=https://promptlens.trilogy.com",
++    "https://promptlens.trilogy.com@evil.example/v1",
++])
++def test_promptlens_lookalikes_stay_third_party(base_url):
++    from agent.anthropic_endpoints import _is_third_party_anthropic_endpoint
++
++    assert anthropic_route_is_oauth(base_url, "opaque") is False
++    assert _is_third_party_anthropic_endpoint(base_url) is True
++
++
++@pytest.mark.parametrize("base_url,expected", [
++    ("", False),
++    ("https://api.anthropic.com/v1", False),
++    ("https://api.anthropic.com.evil.example/v1", True),
++    ("https://evil.example/api.anthropic.com/v1", True),
++    ("https://evil.example/v1?next=https://api.anthropic.com", True),
++    ("https://api.anthropic.com@evil.example/v1", True),
++    ("https://notanthropic.com/v1", True),
++])
++def test_native_anthropic_endpoint_requires_exact_hostname(base_url, expected):
++    from agent.anthropic_endpoints import _is_third_party_anthropic_endpoint
++
++    assert _is_third_party_anthropic_endpoint(base_url) is expected
++
++
++@pytest.mark.parametrize("provider", [
++    "not-truefoundry",
++    "truefoundry.evil",
++    "not-claude-teams",
++    "claude-teams.evil",
++    "truefoundry-claude-teams.evil",
++])
++def test_trusted_provider_name_substrings_do_not_grant_oauth_identity(provider):
++    assert anthropic_route_is_oauth(
++        "https://gateway.example.com/anthropic", "opaque", provider=provider
++    ) is False
++
++
++@pytest.mark.parametrize("base_url,provider", [
++    ("https://promptlens.trilogy.com/v1", None),
++    ("https://gateway.example.com/anthropic", "truefoundry"),
++    ("https://gateway.example.com/anthropic", "claude-teams"),
++    ("https://gateway.example.com/anthropic", "truefoundry-claude-teams"),
++])
++def test_trusted_routes_reject_console_api_keys(base_url, provider):
++    assert anthropic_route_is_oauth(base_url, CONSOLE, provider=provider) is False
++    assert anthropic_route_is_oauth(base_url, lambda: CONSOLE, provider=provider) is False
++
++
++@pytest.mark.parametrize("base_url,credential,provider,expected", [
++    ("https://api.anthropic.com", OAUTH, None, True),
++    ("https://api.minimax.io/anthropic", OAUTH, None, False),
++    ("https://gateway.example.com/anthropic", "opaque", "claude-teams", True),
++    ("https://gateway.example.com/anthropic", "opaque", "claude-teams.evil", False),
++])
++def test_auxiliary_anthropic_wrapper_uses_route_identity(base_url, credential, provider, expected):
++    """Side calls follow the same route-identity decision as the main chat client."""
++    pytest.importorskip("anthropic")
++    import agent.auxiliary_client as aux
++
++    route_provider = provider or "custom"
++    request = aux._ResolveRequest(
++        provider=route_provider,
++        original_provider=route_provider,
++        model="claude-opus-5-5",
++        async_mode=False,
++        raw_codex=False,
++        explicit_base_url=base_url,
++        explicit_api_key=credential,
++        api_mode="anthropic_messages",
++        main_runtime=None,
++        is_vision=False,
++        task=None,
++    )
++    wrapped = aux._wrap_transport(request, object(), "claude-opus-5-5", base_url, credential)
++    assert wrapped.chat.completions._is_oauth is expected

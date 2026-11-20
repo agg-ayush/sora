@@ -372,7 +372,8 @@ def build_fingerprint(manifest) -> dict:
         jobs = None
     claude_cfg = _read_structured(home / ".claude" / "settings.json", json.loads, warnings)
     claude_local = _read_structured(home / ".claude" / "settings.local.json", json.loads, [])
-    seatbelt = _read_structured(hh / "claude-seatbelt-config" / "settings.json", json.loads, warnings)
+    legacy_claude_cfg = _read_structured(hh / "claude-seatbelt-config" / "settings.json", json.loads, warnings)
+    k3_claude_cfg = _read_structured(hh / "claude-k3-config" / "settings.json", json.loads, warnings)
     claude_json = _read_structured(home / ".claude.json", json.loads, warnings)
     provider = _dig(config, "memory", "provider")
 
@@ -393,7 +394,8 @@ def build_fingerprint(manifest) -> dict:
             "installed": _installed_plugins(hh / "plugins", warnings),
         },
         "claude_plugins": _enabled_plugins(claude_cfg, claude_local) if claude_cfg is not None else None,
-        "claude_plugins_seatbelt": _enabled_plugins(seatbelt) if seatbelt is not None else None,
+        "claude_plugins_legacy_config": _enabled_plugins(legacy_claude_cfg) if legacy_claude_cfg is not None else None,
+        "claude_plugins_k3_config": _enabled_plugins(k3_claude_cfg) if k3_claude_cfg is not None else None,
         "claude_mcp_servers": _keys(_dig(claude_json, "mcpServers")) if claude_json is not None else None,
         "mcp_servers": from_config(_keys, "mcp_servers"),
         "model_aliases": from_config(_keys, "model", "aliases"),
@@ -435,7 +437,8 @@ def print_fingerprint(fp: dict) -> None:
         ("hermes plugins disabled", plugins["disabled"]),
         ("hermes plugins installed", plugins["installed"]),
         ("claude plugins", fp["claude_plugins"]),
-        ("claude plugins (seatbelt)", fp["claude_plugins_seatbelt"]),
+        ("claude plugins (legacy isolated config)", fp["claude_plugins_legacy_config"]),
+        ("claude plugins (K3 isolated config)", fp["claude_plugins_k3_config"]),
         ("claude mcp servers", fp["claude_mcp_servers"]),
         ("mcp servers", fp["mcp_servers"]),
         ("model aliases", fp["model_aliases"]),
@@ -474,7 +477,8 @@ DIFFED_SETS = (
     "hermes_plugins.disabled",
     "hermes_plugins.installed",
     "claude_plugins",
-    "claude_plugins_seatbelt",
+    "claude_plugins_legacy_config",
+    "claude_plugins_k3_config",
     "claude_mcp_servers",
     "mcp_servers",
     "model_aliases",
@@ -498,6 +502,8 @@ def _load_fingerprint(path):
         raise CompareInputError(f"{path}: not valid JSON") from None
     if not isinstance(data, dict) or type(data.get("schema")) is not int or data["schema"] != 1:
         raise CompareInputError(f"{path}: not a schema 1 fingerprint")
+    if "claude_plugins_legacy_config" not in data and "claude_plugins_seatbelt" in data:
+        data["claude_plugins_legacy_config"] = data["claude_plugins_seatbelt"]
     for name in DIFFED_SETS:
         value = _get_set(data, name)
         scalar = name == "memory_provider"
@@ -1306,6 +1312,13 @@ def _link_target_for(entry, meta, home):
     return rewrite_home(entry["link_target"], meta["source_home"], home) if entry["type"] == "link" else None
 
 
+def _restore_real_k3_file(base, rel):
+    parts = rel.split("/")
+    if len(parts) < 2 or parts[0] != "claude-k3-config" or parts[1] not in {"skills", "plugins", "CLAUDE.md"}:
+        return False
+    return not os.path.islink(os.path.join(base, parts[0], parts[1]))
+
+
 def build_plan(manifest, meta, entries, dest_platforms, home):
     roots = root_paths()
     plans = []
@@ -1313,9 +1326,10 @@ def build_plan(manifest, meta, entries, dest_platforms, home):
         rel = entry["path"].split("/", 1)[1]
         plan = Plan(entry, rel)
         platform = entry.get("platform")
+        skip_rule = find_restore_skip(manifest, entry["root"], rel)
         if platform and platform not in dest_platforms:
             plan.skip = f"platform {platform}"
-        elif find_restore_skip(manifest, entry["root"], rel):
+        elif skip_rule and not _restore_real_k3_file(roots[entry["root"]], rel):
             plan.skip = "host-profile managed"
         else:
             base = roots[entry["root"]]

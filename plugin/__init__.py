@@ -166,50 +166,107 @@ def _check_available() -> bool:
     return bool(shutil.which("tmux") and shutil.which("claude"))
 
 
-SEATBELT_BASE_URL = "https://<model-gateway>"
+FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference"
+FIREWORKS_MODEL = "accounts/fireworks/models/kimi-k3p1-pro"
 CLAUDE_ROUTE_REFUSAL = (
     "Claude Code must not run on the TrueFoundry gateway (pay-per-token anthropic-primary billing). "
-    "Allowed routes for executor=claude: model_provider=seatbelt (primary) or model_provider=fireworks (fallback)."
+    "Use model_provider=fireworks for executor=claude."
 )
-SEATBELT_MODELS = {
-    "opus": "claude-teams-group/claude-opus-5-5",
-    "sonnet": "claude-teams-group/claude-sonnet-5-5",
-}
-SEATBELT_HAIKU_MODEL = "claude-teams-group/claude-haiku-4-5-20251001"
-SEATBELT_FABLE_MODEL = "claude-teams-group/claude-fable-5-1"
-_SEATBELT_HEADER_RE = re.compile(r"^(x-tfy-api-key|x-maat-token): (.*)$", re.MULTILINE)
-_SEATBELT_ASSIGN_RE = re.compile(r"seatbelt_headers=\$'(.*?)'", re.DOTALL)
 
 
-def _seatbelt_home() -> Path:
-    return Path.home()
+def _read_k3_state(k3_config: Path) -> tuple[dict | None, str | None]:
+    state_path = k3_config / ".claude.json"
+    if not state_path.exists():
+        return {}, None
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return None, f"invalid K3 state at {state_path}: {exc}"
+    if not isinstance(state, dict):
+        return None, f"invalid K3 state at {state_path}: expected an object"
+    responses = state.get("customApiKeyResponses", {})
+    if not isinstance(responses, dict):
+        return None, f"invalid K3 state at {state_path}: customApiKeyResponses must be an object"
+    if not isinstance(responses.get("approved", []), list):
+        return None, f"invalid K3 state at {state_path}: customApiKeyResponses.approved must be a list"
+    projects = state.get("projects", {})
+    if not isinstance(projects, dict) or any(not isinstance(project, dict) for project in projects.values()):
+        return None, f"invalid K3 state at {state_path}: projects must contain objects"
+    return state, None
 
 
-def _seatbelt_headers() -> str:
-    """Build ANTHROPIC_CUSTOM_HEADERS from the user's rc file; raises ValueError if unusable."""
-    home = _seatbelt_home()
-    names = [".zshrc", ".bashrc"] if sys.platform == "darwin" else [".bashrc", ".zshrc"]
-    texts = []
-    for name in names:
-        text = _read_text(home / name)
-        if text is not None:
-            texts.append((name, text))
-    if not texts:
-        raise ValueError(f"seatbelt headers rc file not found (looked for {', '.join(names)} in {home})")
-    name, text = next(((n, t) for n, t in texts if "seatbelt_headers" in t), texts[0])
-    # rc stores the two headers inside a $'...' assignment with a literal \n
-    # escape between them; unescape before matching header lines.
-    assign = _SEATBELT_ASSIGN_RE.search(text)
-    haystack = assign.group(1).replace("\\n", "\n") if assign else text
-    found = {m.group(1): m.group(2).rstrip().rstrip("'").rstrip() for m in _SEATBELT_HEADER_RE.finditer(haystack)}
-    if "x-tfy-api-key" not in found or "x-maat-token" not in found:
-        raise ValueError(f"x-tfy-api-key / x-maat-token header lines missing in ~/{name}")
-    tfy_key = os.environ.get("TFY_API_KEY") or ""
-    if len(tfy_key) < 8:
-        raise ValueError("model_provider=seatbelt requires TFY_API_KEY in env")
-    if not found["x-tfy-api-key"].endswith(tfy_key[-8:]):
-        raise ValueError(f"stale seatbelt token: x-tfy-api-key in ~/{name} does not match the configured TFY_API_KEY (mismatch)")
-    return f"x-tfy-api-key: {found['x-tfy-api-key']}\nx-maat-token: {found['x-maat-token']}"
+def _acquire_k3_state_lock(k3_config: Path):
+    lock_path = k3_config / ".state-update.lock"
+    lock_file = lock_path.open("a+b")
+    try:
+        if os.name == "nt":
+            import msvcrt
+            lock_file.seek(0, os.SEEK_END)
+            if lock_file.tell() == 0:
+                lock_file.write(b"\0")  # msvcrt locks an existing byte range.
+                lock_file.flush()
+        else:
+            import fcntl
+        deadline = time.monotonic() + 10
+        while True:
+            try:
+                if os.name == "nt":
+                    lock_file.seek(0)
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return lock_file
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"K3 state is locked by another launch: {lock_path}") from None
+                time.sleep(0.05)
+    except BaseException:
+        lock_file.close()
+        raise
+
+
+def _update_k3_state(k3_config: Path, rundir: str, fireworks_key: str) -> str | None:
+    k3_config.mkdir(parents=True, exist_ok=True)
+    try:
+        lock_file = _acquire_k3_state_lock(k3_config)
+    except TimeoutError as exc:
+        return str(exc)
+    try:
+        existing, error = _read_k3_state(k3_config)
+        if error:
+            return error
+        changed = False
+        if not existing.get("hasCompletedOnboarding"):
+            existing["hasCompletedOnboarding"] = True
+            changed = True
+        approved = existing.setdefault("customApiKeyResponses", {}).setdefault("approved", [])
+        if fireworks_key not in approved:
+            approved.append(fireworks_key)
+            changed = True
+        trust_projects = existing.setdefault("projects", {})
+        proj = trust_projects.setdefault(str(Path(rundir).resolve()), {})
+        if not proj.get("hasTrustDialogAccepted"):
+            proj["hasTrustDialogAccepted"] = True
+            changed = True
+        if not existing.get("bypassPermissionsModeAccepted"):
+            existing["bypassPermissionsModeAccepted"] = True
+            changed = True
+        if changed:
+            state_path = k3_config / ".claude.json"
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=k3_config, prefix=".claude-", delete=False) as tmp:
+                json.dump(existing, tmp, indent=2)
+                tmp_path = Path(tmp.name)
+            try:
+                os.replace(tmp_path, state_path)
+            finally:
+                tmp_path.unlink(missing_ok=True)
+        return None
+    finally:
+        if os.name == "nt":
+            import msvcrt
+            lock_file.seek(0)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        lock_file.close()
 
 
 # ---------------------------------------------------------------------------
@@ -770,37 +827,46 @@ def _start_session(args: dict) -> dict:
     executor = str(args.get("executor") or "claude").strip().lower()
     model = str(args.get("model") or "").strip() or None
     effort = str(args.get("effort") or "").strip().lower() or None
-    model_provider = str(args.get("model_provider") or "seatbelt").strip().lower()
+    requested_provider = args.get("model_provider")
+    model_provider = str(requested_provider or ("fireworks" if executor == "claude" else "truefoundry")).strip().lower()
 
     if not task_id or not prompt or not workdir:
         return {"ok": False, "error": "task_id, prompt, and workdir are required"}
     if executor not in {"claude", "codex"}:
         return {"ok": False, "error": f"invalid executor: {executor!r} (must be 'claude' or 'codex')"}
-    if model_provider not in {"truefoundry", "fireworks", "seatbelt"}:
-        return {"ok": False, "error": f"invalid model_provider: {model_provider!r} (must be 'truefoundry', 'fireworks' or 'seatbelt')"}
+    if model_provider not in {"truefoundry", "fireworks"}:
+        return {"ok": False, "error": f"invalid model_provider: {model_provider!r} (must be 'truefoundry' or 'fireworks')"}
+    if executor == "codex" and model_provider == "fireworks":
+        return {"ok": False, "error": "model_provider=fireworks is not supported for executor=codex"}
+    if executor == "claude" and model_provider == "fireworks" and model not in {None, "k3p1", FIREWORKS_MODEL}:
+        return {"ok": False, "error": f"model {model!r} is not supported for executor=claude with model_provider=fireworks"}
     if model_provider == "truefoundry" and executor == "claude":
         # Claude Code through TF speaks the anthropic protocol, where the
         # gateway strips group prefixes and bills every Claude model as
-        # anthropic-primary at list rates. Claude work goes through seatbelt
-        # (primary) or fireworks/Kimi K3.1 Pro (fallback). truefoundry remains valid
-        # only for the codex executor (codex_responses transport).
+        # anthropic-primary at list rates. truefoundry remains valid only for
+        # the codex executor (codex_responses transport).
         return {"ok": False, "error": CLAUDE_ROUTE_REFUSAL}
     if effort and effort not in {"low", "medium", "high", "xhigh", "max"}:
         return {"ok": False, "error": f"invalid effort: {effort!r}"}
-    seatbelt_model = None
-    seatbelt_headers = ""
-    if model_provider == "seatbelt":
-        if executor != "claude":
-            return {"ok": False, "error": "model_provider=seatbelt is only supported with executor=claude"}
-        seatbelt_model = SEATBELT_MODELS.get(model or "")
-        if seatbelt_model is None:
-            return {"ok": False, "error": f"invalid model for seatbelt: {model!r} (must be 'opus' or 'sonnet')"}
-        try:
-            seatbelt_headers = _seatbelt_headers()
-        except ValueError as exc:
-            return {"ok": False, "error": f"{exc}; failing closed"}
+    fireworks_key = ""
+    k3_config = None
+    if executor == "claude" and model_provider == "fireworks":
+        fireworks_key = os.environ.get("FIREWORKS_API_KEY") or ""
+        if not fireworks_key:
+            return {"ok": False, "error": "model_provider=fireworks requires FIREWORKS_API_KEY in env"}
+        k3_config = get_hermes_home() / "claude-k3-config"
+        _state, error = _read_k3_state(k3_config)
+        if error:
+            return {"ok": False, "error": error}
     if _session_exists(task_id):
         return {"ok": False, "error": f"tmux session '{task_id}' already exists"}
+
+    worktree_path = (Path(workdir).parent / WORKTREES_DIRNAME / worktree) if worktree else None
+    rundir = str(worktree_path.resolve()) if worktree_path else workdir
+    if executor == "claude" and model_provider == "fireworks":
+        error = _update_k3_state(k3_config, rundir, fireworks_key)
+        if error:
+            return {"ok": False, "error": error}
 
     artifact_dir = _artifact_dir(task_id)
     status_path = artifact_dir / "status.md"
@@ -812,12 +878,9 @@ def _start_session(args: dict) -> dict:
     # PENDING is not a valid outcome token, so _read_outcome still reports outcome:None until overwritten.
     _write_text(outcome_path, "PENDING")
 
-    rundir = workdir
-    worktree_path: Path | None = None
     if worktree:
-        worktrees_parent = Path(workdir).parent / WORKTREES_DIRNAME
+        worktrees_parent = worktree_path.parent
         worktrees_parent.mkdir(parents=True, exist_ok=True)
-        worktree_path = worktrees_parent / worktree
         add = _run(["git", "-C", workdir, "worktree", "add", worktree_path.as_posix(), "-b", worktree])
         if add.returncode != 0:
             # Branch likely already exists — retry without creating it.
@@ -828,7 +891,6 @@ def _start_session(args: dict) -> dict:
                     "error": (fallback.stderr or fallback.stdout or "git worktree add failed").strip(),
                 }
         _seed_graphify(Path(workdir).resolve(), worktree_path)
-        rundir = str(worktree_path)
 
     status_instruction = (
         f"\n\nAt each phase boundary, write a single word to {shlex.quote(status_path.as_posix())}: "
@@ -871,9 +933,9 @@ def _start_session(args: dict) -> dict:
         exec_cmd = "claude"
         if dangerous:
             exec_cmd += " --dangerously-skip-permissions"
-        if model and model_provider not in {"fireworks", "seatbelt"}:
-            # In the fireworks/seatbelt paths the model is set via env vars;
-            # passing --model truncates the accounts/... path in interactive mode (403).
+        if model and model_provider != "fireworks":
+            # Fireworks sets the model via env vars; passing --model truncates
+            # the accounts/... path in interactive mode (403).
             exec_cmd += f" --model {shlex.quote(model)}"
         if effort:
             exec_cmd += f" --effort {shlex.quote(effort)}"
@@ -904,33 +966,10 @@ def _start_session(args: dict) -> dict:
             # OAuth login + TF-gateway settings.json (which otherwise override
             # env-var routing). ANTHROPIC_API_KEY must be explicitly empty so the
             # Bearer-token path (ANTHROPIC_AUTH_TOKEN) wins.
-            fireworks_key = os.environ.get("FIREWORKS_API_KEY") or ""
-            if not fireworks_key:
-                return {"ok": False, "error": "model_provider=fireworks requires FIREWORKS_API_KEY in env"}
-            k3_config = get_hermes_home() / "claude-k3-config"
-            k3_config.mkdir(parents=True, exist_ok=True)
-            # Pre-seed onboarding + trust so the isolated session doesn't stall on
-            # first-run dialogs (workspace trust / bypass-permissions are handled by
-            # --dangerously-skip-permissions; onboarding gate is config-state only).
-            k3_state = k3_config / ".claude.json"
-            try:
-                existing = json.loads(k3_state.read_text(encoding="utf-8")) if k3_state.exists() else {}
-            except ValueError:
-                existing = {}
-            changed = False
-            if not existing.get("hasCompletedOnboarding"):
-                existing["hasCompletedOnboarding"] = True
-                changed = True
-            approved = existing.setdefault("customApiKeyResponses", {}).setdefault("approved", [])
-            if fireworks_key not in approved:
-                approved.append(fireworks_key)
-                changed = True
-            if changed:
-                k3_state.write_text(json.dumps(existing, indent=2), encoding="utf-8")
-            fw_model = "accounts/fireworks/models/kimi-k3p1-pro"
+            fw_model = FIREWORKS_MODEL
             k3_exports = (
                 f"export CLAUDE_CONFIG_DIR={shlex.quote(k3_config.as_posix())} && "
-                f"export ANTHROPIC_BASE_URL=https://api.fireworks.ai/inference && "
+                f"export ANTHROPIC_BASE_URL={FIREWORKS_BASE_URL} && "
                 f"export ANTHROPIC_AUTH_TOKEN={shlex.quote(fireworks_key)} && "
                 f"export ANTHROPIC_API_KEY= && "
                 f"export ANTHROPIC_MODEL={fw_model} && "
@@ -943,62 +982,13 @@ def _start_session(args: dict) -> dict:
             )
             shell_cmd = (
                 f"cd {shlex.quote(Path(rundir).as_posix())} && "
+                "unset ANTHROPIC_API_KEY_BACKUP BACKUP_ANTHROPIC_API_KEY ANTHROPIC_CUSTOM_HEADERS && "
                 f"{env_scrub} && "
                 f"{k3_exports}"
                 f"{exec_cmd} {shlex.quote(full_prompt)}"
             )
-        elif model_provider == "seatbelt":
-            # Isolate from the personal OAuth login/settings.json (same reason as
-            # the fireworks route) and pre-seed onboarding so the first launch
-            # doesn't stall on the welcome/theme screens.
-            sb_config = get_hermes_home() / "claude-seatbelt-config"
-            sb_config.mkdir(parents=True, exist_ok=True)
-            sb_state = sb_config / ".claude.json"
-            try:
-                existing = json.loads(sb_state.read_text(encoding="utf-8")) if sb_state.exists() else {}
-            except ValueError:
-                existing = {}
-            if not existing.get("hasCompletedOnboarding"):
-                existing["hasCompletedOnboarding"] = True
-                sb_state.write_text(json.dumps(existing, indent=2), encoding="utf-8")
-            # Trust the launch dir + accept bypass-permissions: both dialogs
-            # default to "No, exit" in an isolated config and silently kill an
-            # unattended T2 spawn. hasTrustDialogAccepted covers the trust
-            # dialog; bypassPermissionsModeAccepted covers the warning.
-            trust_projects = existing.setdefault("projects", {})
-            proj = trust_projects.setdefault(str(Path(rundir).resolve()), {})
-            changed = False
-            if not proj.get("hasTrustDialogAccepted"):
-                proj["hasTrustDialogAccepted"] = True
-                changed = True
-            if not existing.get("bypassPermissionsModeAccepted"):
-                existing["bypassPermissionsModeAccepted"] = True
-                changed = True
-            if changed:
-                sb_state.write_text(json.dumps(existing, indent=2), encoding="utf-8")
-            seatbelt_exports = (
-                f"export CLAUDE_CONFIG_DIR={shlex.quote(sb_config.as_posix())} && "
-                f"export ANTHROPIC_BASE_URL={SEATBELT_BASE_URL} && "
-                "export ANTHROPIC_AUTH_TOKEN=seatbelt && "
-                f"export ANTHROPIC_CUSTOM_HEADERS={shlex.quote(seatbelt_headers)} && "
-                f"export ANTHROPIC_DEFAULT_OPUS_MODEL={shlex.quote(seatbelt_model)} && "
-                f"export ANTHROPIC_DEFAULT_SONNET_MODEL={shlex.quote(seatbelt_model)} && "
-                f"export ANTHROPIC_DEFAULT_HAIKU_MODEL={shlex.quote(SEATBELT_HAIKU_MODEL)} && "
-                f"export ANTHROPIC_DEFAULT_FABLE_MODEL={shlex.quote(SEATBELT_FABLE_MODEL)} && "
-                "export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1 && "
-                "export CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1 && "
-            )
-            # Headers are exported before env_scrub unsets TFY_API_KEY.
-            shell_cmd = (
-                f"cd {shlex.quote(Path(rundir).as_posix())} && "
-                "unset ANTHROPIC_API_KEY ANTHROPIC_API_KEY_BACKUP BACKUP_ANTHROPIC_API_KEY && "
-                f"{seatbelt_exports}"
-                f"{env_scrub} && "
-                f"{exec_cmd} {shlex.quote(full_prompt)}"
-            )
         else:
-            # Only seatbelt and fireworks are routable for Claude Code. Never
-            # fall through to an ambient/default endpoint.
+            # Never fall through to an ambient/default endpoint.
             return {"ok": False, "error": CLAUDE_ROUTE_REFUSAL}
     # Ensure TFY_API_KEY is available inside the tmux session (the tmux server
     # may have been started before Hermes loaded .env, so it won't inherit the
@@ -1064,7 +1054,7 @@ def _start_session(args: dict) -> dict:
         "worktree": worktree,
         "worktree_path": worktree_path.as_posix() if worktree_path else None,
         "executor": executor,
-        "model": model,
+        "model": FIREWORKS_MODEL if executor == "claude" else model,
         "effort": effort,
         "model_provider": model_provider if executor == "claude" else None,
         "created_at": time.time(),
@@ -1245,8 +1235,8 @@ def _error_journal_record(task_id: str, executor: str, error_type: str, trace: s
 
 def _native_claude_status(task_id: str) -> str | None:
     """Read Claude Code 2.1+'s native session JSON (`status`: 'idle' | 'working') if matched by tmux session name."""
-    for base in (get_hermes_home() / "claude-seatbelt-config" / "sessions",
-                 get_hermes_home() / "claude-k3-config" / "sessions",
+    for base in (get_hermes_home() / "claude-k3-config" / "sessions",
+                 get_hermes_home() / "claude-seatbelt-config" / "sessions",
                  Path.home() / ".claude" / "sessions"):
         if not base.is_dir():
             continue
@@ -1965,17 +1955,16 @@ CLAUDE_ORCHESTRATE_SCHEMA = {
             },
             "model": {
                 "type": "string",
-                "description": "Model id to pin for this session (claude --model / codex -m). Omit for the executor default.",
+                "description": "Model id to pin for this session (codex -m; Fireworks Claude accepts only k3p1 or its full id). Omit for the executor default.",
             },
             "model_provider": {
                 "type": "string",
-                "enum": ["truefoundry", "fireworks", "seatbelt"],
+                "enum": ["truefoundry", "fireworks"],
                 "description": (
-                    "Backend routing for the claude executor (start). "
+                    "Backend routing (start; defaults to fireworks for claude and truefoundry for codex). "
                     "truefoundry = codex executor only (refused for claude: anthropic-primary billing); "
                     "fireworks = Kimi K3.1 Pro via Fireworks' Anthropic-compatible endpoint "
-                    "(isolated CLAUDE_CONFIG_DIR, ignores --model); "
-                    "seatbelt = Claude via the seatbelt gateway (claude executor only; model must be 'opus' or 'sonnet')."
+                    "(claude executor only; isolated CLAUDE_CONFIG_DIR)."
                 ),
             },
             "effort": {

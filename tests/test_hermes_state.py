@@ -432,9 +432,12 @@ class FingerprintTest(unittest.TestCase):
         (sb.hermes / "cron" / "jobs.json").write_text(json.dumps({"jobs": [{"name": "j1"}, {"name": "j2"}]}))
         (sb.claude / "settings.json").write_text(json.dumps({"enabledPlugins": {"on@m": True, "off@m": False, "local@m": False}}))
         (sb.claude / "settings.local.json").write_text(json.dumps({"enabledPlugins": {"local@m": True}}))
-        seat = sb.hermes / "claude-seatbelt-config"
-        seat.mkdir()
-        (seat / "settings.json").write_text(json.dumps({"enabledPlugins": {"seat@m": True}}))
+        legacy_config = sb.hermes / "claude-seatbelt-config"
+        legacy_config.mkdir()
+        (legacy_config / "settings.json").write_text(json.dumps({"enabledPlugins": {"legacy@m": True}}))
+        k3_config = sb.hermes / "claude-k3-config"
+        k3_config.mkdir()
+        (k3_config / "settings.json").write_text(json.dumps({"enabledPlugins": {"k3@m": True}}))
         sb.stub("hermes", "echo 'hermes 9.9.9'")
         fp, _ = _audit_json(sb)
         self.assertEqual(fp["skills"]["count"], 3)
@@ -447,7 +450,8 @@ class FingerprintTest(unittest.TestCase):
         self.assertEqual(fp["memory_provider"], "synapse-mem")
         self.assertEqual(fp["cron_jobs"], ["j1", "j2"])
         self.assertEqual(fp["claude_plugins"], ["local@m", "on@m"])
-        self.assertEqual(fp["claude_plugins_seatbelt"], ["seat@m"])
+        self.assertEqual(fp["claude_plugins_legacy_config"], ["legacy@m"])
+        self.assertEqual(fp["claude_plugins_k3_config"], ["k3@m"])
         self.assertEqual(fp["versions"]["hermes"], "hermes 9.9.9")
         self.assertIsNone(fp["versions"]["claude"])
         self.assertTrue(any("claude" in w for w in fp["warnings"]))
@@ -476,9 +480,12 @@ class FingerprintTest(unittest.TestCase):
         (sb.hermes / "cron").mkdir()
         (sb.hermes / "cron" / "jobs.json").write_text('{"jobs": [{"name": "job-one"}]}')
         (sb.claude / "settings.json").write_text('{"enabledPlugins": {"cl-plugin@m": true}, "env": {"K": "SENTINEL-SET"}}')
-        seat = sb.hermes / "claude-seatbelt-config"
-        seat.mkdir()
-        (seat / "settings.json").write_text('{"enabledPlugins": {"seat-plugin@m": true}}')
+        legacy_config = sb.hermes / "claude-seatbelt-config"
+        legacy_config.mkdir()
+        (legacy_config / "settings.json").write_text('{"enabledPlugins": {"legacy-plugin@m": true}}')
+        k3_config = sb.hermes / "claude-k3-config"
+        k3_config.mkdir()
+        (k3_config / "settings.json").write_text('{"enabledPlugins": {"k3-plugin@m": true}}')
         (sb.home / ".claude.json").write_text('{"mcpServers": {"cj-one": {"env": {"K": "SENTINEL-CJ"}}}}')
         sb.stub("hermes", "echo 'hermes 9.9.9'")
         code, out, err = sb.run("audit")
@@ -493,7 +500,8 @@ class FingerprintTest(unittest.TestCase):
             "prov-one",
             "job-one",
             "cl-plugin@m",
-            "seat-plugin@m",
+            "legacy-plugin@m",
+            "k3-plugin@m",
             "cj-one",
             "hermes 9.9.9",
             "mac",
@@ -577,7 +585,8 @@ def _fp(**over):
         "skills": {"count": 0, "names": []},
         "hermes_plugins": {"enabled": [], "disabled": [], "installed": []},
         "claude_plugins": [],
-        "claude_plugins_seatbelt": [],
+        "claude_plugins_legacy_config": [],
+        "claude_plugins_k3_config": [],
         "claude_mcp_servers": [],
         "mcp_servers": [],
         "model_aliases": [],
@@ -673,6 +682,17 @@ class CompareTest(unittest.TestCase):
         self.assertIn("claude-code-identity", diff)
         self.assertNotIn("platforms/telegram", diff)
         self.assertEqual(expected.count("platforms/telegram"), 2)
+
+    def test_compare_reads_legacy_isolated_plugin_field(self):
+        old = _fp()
+        del old["claude_plugins_legacy_config"]
+        old["claude_plugins_seatbelt"] = ["legacy@m"]
+        self.assertEqual(self._compare(old, _fp(claude_plugins_legacy_config=["legacy@m"]))[0], 0)
+        code, out, _ = self._compare(old, _fp(claude_plugins_legacy_config=["new@m"]))
+        self.assertEqual(code, 1)
+        self.assertIn("claude_plugins_legacy_config", out)
+        self.assertIn("legacy@m", out)
+        self.assertIn("new@m", out)
 
     def test_compare_null_set_is_unknown_and_bad_input_exits_2(self):
         code, out, _ = self._compare(_fp(mcp_servers=None), _fp(mcp_servers=["a"]))
@@ -1423,6 +1443,13 @@ class RewriteUnitTest(unittest.TestCase):
         self.assertEqual(sb.mod.find_restore_skip(manifest, "hermes", "config.yaml"), planted)
         self.assertEqual(sb.mod.classify(sb.mod.load_manifest(_MANIFEST), "hermes", "agent-hooks")["class"], "repo-managed")
 
+    def test_restore_skip_covers_isolated_config_symlinks(self):
+        manifest = self.sb.mod.load_manifest(_MANIFEST)
+        for base in ("claude-seatbelt-config", "claude-k3-config"):
+            for path in ("skills", "skills/nested", "plugins", "plugins/nested", "CLAUDE.md"):
+                with self.subTest(path=f"{base}/{path}"):
+                    self.assertIsNotNone(self.sb.mod.find_restore_skip(manifest, "hermes", f"{base}/{path}"))
+
     def test_restore_skip_covers_every_repo_script(self):
         sb = self.sb
         manifest = sb.mod.load_manifest(_MANIFEST)
@@ -1447,6 +1474,34 @@ class RestoreScriptsTest(RestoreBase):
         self.assertEqual((sb.hermes / "scripts/orphan-reaper.py").read_text(), "dest-version")
         self.assertRegex(out, r"skipped \(host-profile managed\).*orphan-reaper\.py")
         self.assertEqual((sb.hermes / "scripts/mine.sh").read_text(), "echo mine")
+
+    def test_restore_preserves_real_k3_files_and_skips_only_managed_links(self):
+        sb = self.sb
+        rel = "claude-k3-config/plugins/installed_plugins.json"
+        self.put("hermes", rel, "seeded")
+        b = Bundle(source_home=str(sb.home))
+        b.dir("hermes/claude-k3-config").dir("hermes/claude-k3-config/plugins").file(f"hermes/{rel}", "bundle")
+        b.write(self.F)
+        code, out, err = self.restore()
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual((sb.hermes / rel).read_text(), "bundle")
+        self.assertEqual(self.backup_path(rel).read_text(), "seeded")
+
+    def test_restore_skips_k3_files_below_a_managed_link(self):
+        sb = self.sb
+        shared = sb.claude / "plugins"
+        shared.mkdir(parents=True)
+        (shared / "installed_plugins.json").write_text("shared")
+        (sb.hermes / "claude-k3-config").mkdir()
+        (sb.hermes / "claude-k3-config" / "plugins").symlink_to(shared, target_is_directory=True)
+        rel = "claude-k3-config/plugins/installed_plugins.json"
+        b = Bundle(source_home=str(sb.home))
+        b.dir("hermes/claude-k3-config").dir("hermes/claude-k3-config/plugins").file(f"hermes/{rel}", "bundle")
+        b.write(self.F)
+        code, out, err = self.restore()
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual((shared / "installed_plugins.json").read_text(), "shared")
+        self.assertIn("skipped (host-profile managed)", out)
 
     def test_restore_never_overwrites_host_profile_files(self):
         sb = self.sb

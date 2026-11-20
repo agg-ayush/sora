@@ -1,0 +1,30 @@
+diff --git a/agent/anthropic_message_convert.py b/agent/anthropic_message_convert.py
+index 0372b0581ac..1506fcf3ea3 100644
+--- a/agent/anthropic_message_convert.py
++++ b/agent/anthropic_message_convert.py
+@@ -5,6 +5,7 @@ scrubbing). Endpoint predicates come from ``agent/anthropic_endpoints.py`` so th
+ imports the adapter (no cycle)."""
+
+ import copy
++import hashlib
+ import json
+ import logging
+ import re
+@@ -113,8 +114,15 @@ def normalize_model_name(model: str, preserve_dots: bool = False) -> str:
+
+
+ def _sanitize_tool_id(tool_id: str) -> str:
+-    """Anthropic requires ids matching [a-zA-Z0-9_-]; replace the rest, never empty."""
+-    return (re.sub(r"[^a-zA-Z0-9_-]", "_", tool_id) if tool_id else "") or "tool_0"
++    """Anthropic/Bedrock require ids matching [a-zA-Z0-9_-] and <=64 chars; strip TrueFoundry __thought__ suffix or hash-truncate >64 chars."""
++    if not tool_id:
++        return "tool_0"
++    if "__thought__" in tool_id:
++        tool_id = tool_id.split("__thought__", 1)[0]
++    cleaned = re.sub(r"[^a-zA-Z0-9_-]", "_", tool_id) or "tool_0"
++    if len(cleaned) > 64:
++        cleaned = f"{cleaned[:47]}_{hashlib.sha256(cleaned.encode()).hexdigest()[:16]}"
++    return cleaned
+
+
+ def _tool_use_block(tool_id: Any, name: Any, tool_input: Any) -> dict[str, Any]:

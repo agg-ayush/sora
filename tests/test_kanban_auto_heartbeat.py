@@ -205,12 +205,11 @@ class KanbanAutoHeartbeatTest(unittest.TestCase):
             return _completed(0)
         with patch.object(claude_orchestrate, "_tasks_root", return_value=self.tasks_root), \
              patch.object(claude_orchestrate, "_run", side_effect=fake_run), \
-             patch.object(claude_orchestrate, "_seatbelt_headers", return_value="x-tfy-api-key: DUMMY\nx-maat-token: DUMMY"), \
-             patch.dict(os.environ, {"TFY_API_KEY": "DUMMY_TFY"}, clear=False), \
+             patch.dict(os.environ, {"FIREWORKS_API_KEY": "DUMMY_FW"}, clear=False), \
              patch.object(claude_orchestrate, "_session_exists", return_value=False):
             out = claude_orchestrate._start({
                 "task_id": "t-start-link", "prompt": "x", "workdir": "/tmp",
-                "model_provider": "seatbelt", "model": "opus",
+                "model_provider": "fireworks",
                 "kanban_task_id": "KB-55", "kanban_board": "boardz",
             })
             self.assertTrue(out["ok"], out)
@@ -220,7 +219,7 @@ class KanbanAutoHeartbeatTest(unittest.TestCase):
 
             out2 = claude_orchestrate._start({
                 "task_id": "t-start-nolink", "prompt": "x", "workdir": "/tmp",
-                "model_provider": "seatbelt", "model": "opus",
+                "model_provider": "fireworks",
             })
             self.assertTrue(out2["ok"], out2)
             meta2 = json.loads((self.tasks_root / "t-start-nolink" / "meta.json").read_text())

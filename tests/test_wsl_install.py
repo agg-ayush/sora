@@ -30,8 +30,19 @@ EC2_OSRELEASE = "6.8.0-1021-aws\n"
 EC2_VERSION = "Linux version 6.8.0-1021-aws (buildd@lcy02-amd64-001) (x86_64-linux-gnu-gcc-13) #22-Ubuntu SMP\n"
 
 
+_SYSTEM_BIN_PATH = os.pathsep.join(("/bin", "/usr/bin", "/sbin", "/usr/sbin"))
+_REAL_BASH = shutil.which("bash", path=_SYSTEM_BIN_PATH)
+_SANDBOX_UTILITIES = (
+    "awk", "basename", "bash", "cat", "chmod", "cp", "cut", "date", "dirname",
+    "find", "git", "grep", "head", "id", "ln", "ls", "mkdir", "mktemp", "mv",
+    "ps", "readlink", "rm", "sed", "sh", "sleep", "sort", "tail", "touch", "tr", "wc",
+)
+
+
 def _write_exe(path: Path, body: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink():
+        path.unlink()
     path.write_text("#!/bin/sh\n" + textwrap.dedent(body))
     path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
@@ -67,6 +78,11 @@ class _Sandbox:
         self.calls = tmp / "calls.log"
         self.state = tmp / "hermes-state"
         self.home.mkdir()
+        self.bin.mkdir()
+        for name in _SANDBOX_UTILITIES:
+            real = shutil.which(name, path=_SYSTEM_BIN_PATH)
+            if real:
+                (self.bin / name).symlink_to(real)
         self.calls.touch()
         (tmp / "osrelease").write_text(osrelease)
         (tmp / "version").write_text(version)
@@ -78,7 +94,7 @@ class _Sandbox:
         _write_exe(self.bin / "python3", f'exec "{sys.executable}" "$@"\n')
         self.env = {
             "HOME": str(self.home),
-            "PATH": os.pathsep.join([str(self.bin), "/usr/bin", "/bin"]),
+            "PATH": str(self.bin),
             "HERMES_PROC_OSRELEASE": str(tmp / "osrelease"),
             "HERMES_PROC_VERSION": str(tmp / "version"),
             "LANG": "C",
@@ -90,7 +106,7 @@ class _Sandbox:
 
     def run(self, script: str, extra_env: dict | None = None, timeout: int = 120) -> subprocess.CompletedProcess:
         env = dict(self.env, **(extra_env or {}))
-        return subprocess.run(["bash", "-c", script], cwd=_ROOT, env=env, capture_output=True, text=True, timeout=timeout)
+        return subprocess.run([_REAL_BASH, "-c", script], cwd=_ROOT, env=env, capture_output=True, text=True, timeout=timeout)
 
     def calls_text(self) -> str:
         return self.calls.read_text()
@@ -615,11 +631,15 @@ class BootstrapTest(_SandboxCase):
         self.assertIn("[host-profile] host profile: wsl", r.stdout)
         self.assertEqual(r.stdout.count("systemd is not running"), 1)
         self.assertTrue((sb.home / ".claude" / "skills").is_dir())
+        k3 = sb.home / ".hermes" / "claude-k3-config"
+        self.assertEqual((k3 / "skills").readlink(), sb.home / ".claude" / "skills")
+        self.assertEqual((k3 / "plugins").readlink(), sb.home / ".claude" / "plugins")
         # wslu came from apt in this same run, so the preflight after apt configured the browser.
         self.assertIn("BROWSER=wslview for login flows", r.stdout)
         self.assertIn("hermes-setup: WSL login browser", (sb.home / ".bashrc").read_text())
         self.assertTrue(r.stdout.rstrip().splitlines()[-1].startswith("[bootstrap-wsl]   4. optional"))
 
+        (sb.home / ".claude" / "plugins" / "installed_plugins.json").write_text('{"plugins": {"demo@market": {}}}')
         sb.calls.write_text("")
         r2 = self.bootstrap(sb)
         self.assertEqual(r2.returncode, 0, r2.stdout[-3000:] + r2.stderr[-3000:])
@@ -632,10 +652,39 @@ class BootstrapTest(_SandboxCase):
         self.assertNotIn("hermes pm install", calls2)
         self.assertIn("apt packages present", r2.stdout)
         self.assertEqual((sb.home / ".bashrc").read_text().count("hermes-setup: WSL login browser"), 1)
+        settings = json.loads((k3 / "settings.json").read_text())
+        self.assertEqual(settings["enabledPlugins"], {"demo@market": True})
+        self.assertTrue(settings["skipDangerousModePermissionPrompt"])
 
         r3 = self.bootstrap(sb, "--dry-run")
         self.assertEqual(r3.returncode, 0, r3.stdout + r3.stderr)
         self.assertNotIn("would install", r3.stdout)
+
+    def test_seeded_real_k3_directories_are_preserved_and_converted_to_links(self):
+        sb = self.make()
+        shared_plugins = sb.home / ".claude" / "plugins"
+        shared_plugins.mkdir(parents=True)
+        (shared_plugins / "installed_plugins.json").write_text('{"plugins": {"demo@market": {}}}')
+        (shared_plugins.parent / "CLAUDE.md").write_text("shared rules\n")
+        k3 = sb.home / ".hermes" / "claude-k3-config"
+        (k3 / "plugins").mkdir(parents=True)
+        (k3 / "plugins" / "legacy-state.json").write_text("legacy plugins\n")
+        (k3 / "skills" / "legacy-skill").mkdir(parents=True)
+        (k3 / "skills" / "legacy-skill" / "SKILL.md").write_text("legacy skill\n")
+        (k3 / "CLAUDE.md").write_text("legacy rules\n")
+
+        result = self.bootstrap(sb)
+        self.assertEqual(result.returncode, 0, result.stdout[-3000:] + result.stderr[-3000:])
+        self.assertEqual((k3 / "plugins").readlink(), shared_plugins)
+        self.assertEqual((k3 / "skills").readlink(), sb.home / ".claude" / "skills")
+        self.assertEqual((k3 / "CLAUDE.md").readlink(), shared_plugins.parent / "CLAUDE.md")
+        self.assertFalse((k3 / "plugins" / "plugins").exists())
+        cache = sb.home / ".hermes" / "cache"
+        for name, expected in (("legacy-state.json", "legacy plugins\n"), ("SKILL.md", "legacy skill\n"), ("CLAUDE.md", "legacy rules\n")):
+            matches = [p for p in cache.rglob(name) if p.is_file()]
+            self.assertTrue(any(p.read_text() == expected for p in matches), name)
+        settings = json.loads((k3 / "settings.json").read_text())
+        self.assertEqual(settings["enabledPlugins"], {"demo@market": True})
 
     def test_watchdog_timer_waits_for_the_gateway_opt_in(self):
         sb = self.make()
@@ -694,6 +743,7 @@ class BootstrapTest(_SandboxCase):
         self.assertNoWatchdogTimer(sb, r)
 
         (sb.bin / "bash").unlink()
+        (sb.bin / "bash").symlink_to(real_bash)
         sb.calls.write_text("")
         self.assertNoWatchdogTimer(sb, sb.run(f'bash "{_SETUP}"', timeout=300))
 
